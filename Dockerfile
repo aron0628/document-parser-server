@@ -2,9 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 # Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy application
 COPY entrypoint.sh .
@@ -16,7 +19,7 @@ RUN mkdir -p /app/data/jobs /app/result /app/uploads
 
 # Healthcheck using python httpx (no curl in slim image)
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=5s \
-    CMD python -c "import httpx; httpx.get('http://localhost:${PORT:-9997}/health').raise_for_status()"
+    CMD uv run python -c "import httpx; httpx.get('http://localhost:${PORT:-9997}/health').raise_for_status()"
 
 ENTRYPOINT ["./entrypoint.sh"]
 CMD ["api"]

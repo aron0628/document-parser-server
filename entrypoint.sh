@@ -7,7 +7,7 @@ PORT="${PORT:-9997}"
 case "$MODE" in
     api)
         echo "Starting Document Parser API server on port $PORT..."
-        exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
+        exec uv run uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
         ;;
     *)
         echo "Unknown mode: $MODE"

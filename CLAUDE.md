@@ -5,14 +5,14 @@ PDF 파싱 API 서버. Upstage(레이아웃 분석) + OpenAI(이미지/테이블
 
 ## Build & Run
 ```bash
-pip install -e ".[dev]"
-uvicorn app.main:app --host 0.0.0.0 --port 9997
+uv sync --dev
+uv run uvicorn app.main:app --host 0.0.0.0 --port 9997
 
 # Docker
 docker compose up --build
 
 # Test
-pytest
+uv run pytest
 ```
 
 ## Architecture
