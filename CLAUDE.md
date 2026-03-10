@@ -21,6 +21,11 @@ pytest
 - **File-based job storage** — `data/jobs/{job_id}.json`
 - **Background task** — `_run_pipeline` in routes.py
 
+## Client
+- Python 클라이언트: `/Users/aron/Documents/lab/document-parser-client`
+- GitHub: https://github.com/aron0628/document-parser-client
+- 동기/비동기 클라이언트 + CLI 제공
+
 ## Key Rules
 - All external HTTP calls use `httpx.AsyncClient` (no `requests`)
 - Pipeline nodes are async functions taking `PipelineState`, returning `dict`

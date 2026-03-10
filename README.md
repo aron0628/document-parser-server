@@ -78,13 +78,33 @@ job_id = response.json()["job_id"]
 
 ## 클라이언트
 
-Python 클라이언트: [teddynote-parser-api-client](https://github.com/teddylee777/teddynote-parser-api-client)
+Python 클라이언트: [document-parser-client](https://github.com/aron0628/document-parser-client)
 
 ```python
-from teddynote_parser_client import TeddyNoteParserClient
+from document_parser_client import DocumentParserClient
 
-client = TeddyNoteParserClient(base_url="http://localhost:9997")
-client.parse("document.pdf", language="Korean")
+client = DocumentParserClient(api_url="http://localhost:9997")
+job_id = client.parse_pdf("document.pdf", language="Korean")
+result = client.wait_for_job_completion(job_id)
+client.download_result(job_id, save_dir="./output", extract=True)
+```
+
+비동기 클라이언트도 지원:
+
+```python
+from document_parser_client import AsyncDocumentParserClient
+
+async with AsyncDocumentParserClient(api_url="http://localhost:9997") as client:
+    job_id = await client.parse_pdf("document.pdf")
+    await client.wait_for_job_completion(job_id)
+    await client.download_result(job_id)
+```
+
+CLI 사용:
+
+```bash
+pip install document-parser-client
+document-parser parse document.pdf --wait --download
 ```
 
 ## 환경 변수
