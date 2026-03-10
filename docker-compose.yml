@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  document-parser-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: document-parser-server:v0.1.0
+    container_name: document-parser-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-9997}:${PORT:-9997}"
+    volumes:
+      - ${DATA_VOLUME:-./data}:/app/data
+      - ${RESULT_VOLUME:-./result}:/app/result
+      - ${UPLOADS_VOLUME:-./uploads}:/app/uploads
+    environment:
+      - UPSTAGE_API_KEY=${UPSTAGE_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TZ=Asia/Seoul
+      - PORT=${PORT:-9997}
+      - RUN_MODE=api
+      - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-100}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:${PORT:-9997}/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    command: ["api"]
