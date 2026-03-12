@@ -28,6 +28,9 @@ def _parse_elements(merged_result: Dict[str, Any]) -> List[Dict[str, Any]]:
         category = element["type"].lower()
         if category in ("figure", "chart", "picture", "image"):
             element["type"] = "image"
+            base64_encoding = elem.get("base64_encoding")
+            if base64_encoding is not None:
+                element["base64_encoding"] = base64_encoding
         elif category in ("table",):
             element["type"] = "table"
         else:
@@ -38,12 +41,24 @@ def _parse_elements(merged_result: Dict[str, Any]) -> List[Dict[str, Any]]:
     return elements
 
 
+def _strip_base64_from_merged(merged: Dict[str, Any]) -> Dict[str, Any]:
+    """merged_parse_result에서 base64_encoding 필드를 제거한 shallow copy 반환 (원본 불변)"""
+    stripped_elements = []
+    for elem in merged.get("elements", []):
+        stripped_elem = {k: v for k, v in elem.items() if k != "base64_encoding"}
+        stripped_elements.append(stripped_elem)
+
+    result = {**merged, "elements": stripped_elements}
+    return result
+
+
 async def create_elements_node(state: PipelineState) -> dict:
     """병합된 파싱 결과에서 요소 객체 리스트 생성"""
     job_id = state["job_id"]
     merged = state.get("merged_parse_result", {})
 
     elements = _parse_elements(merged)
+    stripped_merged = _strip_base64_from_merged(merged)
 
     text_count = sum(1 for e in elements if e["type"] == "text")
     image_count = sum(1 for e in elements if e["type"] == "image")
@@ -54,4 +69,4 @@ async def create_elements_node(state: PipelineState) -> dict:
         f"text={text_count}, image={image_count}, table={table_count}"
     )
 
-    return {"elements": elements}
+    return {"elements": elements, "merged_parse_result": stripped_merged}

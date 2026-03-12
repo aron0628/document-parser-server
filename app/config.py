@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     # API Keys (fallback defaults - per-request headers take precedence)
     upstage_api_key: str = ""
     openai_api_key: str = ""
+    gemini_api_key: str = ""
 
     # Server
     port: int = 9997
