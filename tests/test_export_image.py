@@ -127,6 +127,82 @@ async def test_include_image_false_returns_empty_list(mock_work_dir):
 
 
 @pytest.mark.asyncio
+async def test_table_element_creates_png_with_table_prefix(mock_work_dir):
+    """table 타입 + 유효한 base64 → table_ prefix 파일명으로 PNG 저장"""
+    state = {
+        "job_id": "job-t1",
+        "include_image": True,
+        "elements": [
+            {
+                "type": "table",
+                "page": 1,
+                "position": 0,
+                "base64_encoding": _VALID_PNG_B64,
+            }
+        ],
+    }
+    result = await export_image_node(state)
+
+    image_paths = result["image_paths"]
+    assert len(image_paths) == 1
+    img_path = Path(image_paths[0])
+    assert img_path.exists()
+    assert "table_" in img_path.name
+    assert img_path.read_bytes() == _FALLBACK_PNG
+
+
+@pytest.mark.asyncio
+async def test_mixed_image_and_table_elements(mock_work_dir):
+    """image + table 혼합 → 둘 다 PNG로 저장, 파일명 prefix 구분"""
+    state = {
+        "job_id": "job-t2",
+        "include_image": True,
+        "elements": [
+            {
+                "type": "image",
+                "page": 1,
+                "position": 0,
+                "base64_encoding": _VALID_PNG_B64,
+            },
+            {
+                "type": "table",
+                "page": 1,
+                "position": 1,
+                "base64_encoding": _VALID_PNG_B64,
+            },
+        ],
+    }
+    result = await export_image_node(state)
+
+    image_paths = result["image_paths"]
+    assert len(image_paths) == 2
+    names = [Path(p).name for p in image_paths]
+    assert any("img_" in n for n in names)
+    assert any("table_" in n for n in names)
+
+
+@pytest.mark.asyncio
+async def test_include_image_false_skips_table_too(mock_work_dir):
+    """include_image=False → table 타입도 건너뜀"""
+    state = {
+        "job_id": "job-t3",
+        "include_image": False,
+        "elements": [
+            {
+                "type": "table",
+                "page": 1,
+                "position": 0,
+                "base64_encoding": _VALID_PNG_B64,
+            }
+        ],
+    }
+    result = await export_image_node(state)
+
+    assert result["image_paths"] == []
+    assert not (mock_work_dir / "images").exists()
+
+
+@pytest.mark.asyncio
 async def test_return_value_does_not_contain_elements_key(mock_work_dir):
     """반환값에 'elements' 키 미포함 (elements in-place 수정 없음)"""
     state = {

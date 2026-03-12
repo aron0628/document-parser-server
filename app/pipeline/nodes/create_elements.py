@@ -33,6 +33,9 @@ def _parse_elements(merged_result: Dict[str, Any]) -> List[Dict[str, Any]]:
                 element["base64_encoding"] = base64_encoding
         elif category in ("table",):
             element["type"] = "table"
+            base64_encoding = elem.get("base64_encoding")
+            if base64_encoding is not None:
+                element["base64_encoding"] = base64_encoding
         else:
             element["type"] = "text"
 

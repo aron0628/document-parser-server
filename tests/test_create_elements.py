@@ -33,8 +33,8 @@ def test_image_element_preserves_base64():
     assert elem["base64_encoding"] == "abc123=="
 
 
-def test_table_element_excludes_base64():
-    """table 카테고리 + base64_encoding 있는 element → 변환 결과에 base64_encoding 미포함"""
+def test_table_element_preserves_base64():
+    """table 카테고리 + base64_encoding 있는 element → 변환 결과에 base64_encoding 포함"""
     merged = {
         "elements": [
             {
@@ -42,12 +42,30 @@ def test_table_element_excludes_base64():
                 "category": "table",
                 "content": {"text": "cell", "html": "<table/>"},
                 "page": 1,
-                "base64_encoding": "shouldnotappear==",
+                "base64_encoding": "tabledata==",
             }
         ]
     }
     result = _parse_elements(merged)
     assert len(result) == 1
+    elem = result[0]
+    assert elem["type"] == "table"
+    assert elem["base64_encoding"] == "tabledata=="
+
+
+def test_table_element_without_base64_omits_key():
+    """table 카테고리지만 base64_encoding 없음 → 키 자체가 없어야 함"""
+    merged = {
+        "elements": [
+            {
+                "id": 2,
+                "category": "table",
+                "content": {"text": "cell", "html": "<table/>"},
+                "page": 1,
+            }
+        ]
+    }
+    result = _parse_elements(merged)
     elem = result[0]
     assert elem["type"] == "table"
     assert "base64_encoding" not in elem

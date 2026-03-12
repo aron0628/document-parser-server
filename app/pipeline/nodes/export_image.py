@@ -1,4 +1,4 @@
-"""export_image node: 이미지 요소의 base64 데이터를 PNG 파일로 저장
+"""export_image node: 이미지 및 테이블 요소의 base64 데이터를 PNG 파일로 저장
 
 include_image=False이면 image_paths를 빈 리스트로 반환 (no-op).
 base64 데이터가 없거나 디코딩 실패 시 fallback PNG(1x1 투명)를 저장한다.
@@ -24,7 +24,7 @@ _FALLBACK_PNG = (
 
 
 async def export_image_node(state: PipelineState) -> dict:
-    """이미지 요소의 base64 데이터를 PNG 파일로 저장"""
+    """이미지 및 테이블 요소의 base64 데이터를 PNG 파일로 저장"""
     job_id = state["job_id"]
     include_image = state.get("include_image", True)
     elements = state.get("elements", [])
@@ -36,13 +36,14 @@ async def export_image_node(state: PipelineState) -> dict:
     image_dir = get_work_dir(job_id) / "images"
     image_dir.mkdir(parents=True, exist_ok=True)
 
-    image_elements = [e for e in elements if e["type"] == "image"]
+    image_elements = [e for e in elements if e["type"] in ("image", "table")]
     image_paths: List[str] = []
 
     for elem in image_elements:
         page = elem.get("page", 0)
         pos = elem.get("position", 0)
-        img_filename = f"{job_id}_page_{page}_img_{pos}.png"
+        type_prefix = "table" if elem["type"] == "table" else "img"
+        img_filename = f"{job_id}_page_{page}_{type_prefix}_{pos}.png"
         img_path = image_dir / img_filename
 
         b64_data = elem.get("base64_encoding")
