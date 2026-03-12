@@ -8,6 +8,28 @@ from app.pipeline.external.openai_client import describe_image
 
 logger = logging.getLogger(__name__)
 
+MAX_CONTEXT_CHARS = 2000
+
+
+def _build_page_text_map(elements: List[Dict[str, Any]]) -> Dict[int, str]:
+    """elements에서 페이지별 텍스트 컨텍스트를 구성한다.
+
+    같은 페이지의 type=="text" 요소를 리스트 순서대로 결합하고,
+    MAX_CONTEXT_CHARS로 잘라낸다.
+    """
+    page_texts: Dict[int, List[str]] = {}
+    for elem in elements:
+        if elem.get("type") == "text":
+            page = elem.get("page", 0)
+            content = elem.get("content", "")
+            if content:
+                page_texts.setdefault(page, []).append(content)
+
+    return {
+        page: "\n".join(texts)[:MAX_CONTEXT_CHARS]
+        for page, texts in page_texts.items()
+    }
+
 
 async def image_entity_extractor_node(state: PipelineState) -> dict:
     """각 이미지에 대해 OpenAI Vision API로 설명 생성
@@ -19,6 +41,8 @@ async def image_entity_extractor_node(state: PipelineState) -> dict:
     language = state.get("language", "Korean")
     image_paths = state.get("image_paths", [])
     page_elements = state.get("page_elements", {})
+    elements = state.get("elements", [])
+    page_text_map = _build_page_text_map(elements)
 
     image_entities: List[Dict[str, Any]] = []
 
@@ -48,13 +72,14 @@ async def image_entity_extractor_node(state: PipelineState) -> dict:
             continue
 
         try:
-            description = await describe_image(matching_path, api_key, language)
+            page_context = page_text_map.get(page)
+            description = await describe_image(matching_path, api_key, language, context=page_context)
             image_entities.append({
                 "element_id": img_elem.get("id"),
                 "page": page,
                 "description": description,
             })
-            logger.info(f"[{job_id}] 이미지 설명 생성 완료: page={page}, pos={pos}")
+            logger.info(f"[{job_id}] 이미지 설명 생성 완료: page={page}, pos={pos}, context={'있음' if page_context else '없음'}")
         except Exception as e:
             logger.warning(f"[{job_id}] 이미지 설명 생성 실패: {e}")
             image_entities.append({
