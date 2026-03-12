@@ -9,11 +9,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
 from app.config import settings
+from app.logging_config import setup_logging
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """서버 시작/종료 시 실행되는 lifespan 이벤트"""
+    setup_logging()
     # Startup: 필요한 디렉토리 생성
     for dir_path in [
         Path(settings.data_volume) / "jobs",

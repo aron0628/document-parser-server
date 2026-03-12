@@ -24,6 +24,9 @@ class StatusResponse(BaseModel):
     completed_at: Optional[float] = None
     zip_filename: Optional[str] = None
     error: Optional[str] = None
+    current_phase: Optional[int] = None
+    current_node: Optional[str] = None
+    progress: Optional[float] = None
 
 
 class JobSummary(BaseModel):

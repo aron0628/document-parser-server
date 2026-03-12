@@ -1,6 +1,6 @@
 """LangGraph 파이프라인 그래프 정의
 
-아키텍처 다이어그램의 14개 노드를 정확하게 매핑:
+아키텍처 다이어그램의 15개 노드를 정확하게 매핑:
 - Phase 1: split_pdf → working_queue ⟲ document_parse → post_document_parse
 - Phase 2: create_elements → export_image → [parallel: entity extraction + quick exports]
 - Phase 3: 4개 export 노드 → END

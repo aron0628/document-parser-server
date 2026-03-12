@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     # Server
     port: int = 9997
     run_mode: str = "api"
+    log_level: str = "INFO"
     max_upload_size_mb: int = 100
 
     # Volume paths

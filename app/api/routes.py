@@ -143,6 +143,9 @@ async def get_job_status(job_id: str) -> StatusResponse:
         completed_at=job.get("completed_at"),
         zip_filename=job.get("zip_filename"),
         error=job.get("error"),
+        current_phase=job.get("current_phase"),
+        current_node=job.get("current_node"),
+        progress=job.get("progress"),
     )
 
 

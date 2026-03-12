@@ -4,9 +4,12 @@
 오케스트레이터(LangGraph)에 의존하지 않는다.
 """
 
+import logging
 from typing import Any, Dict, Protocol
 
 from app.models.state import PipelineState
+
+logger = logging.getLogger(__name__)
 
 
 class PipelineRunner(Protocol):
@@ -24,8 +27,39 @@ class LangGraphPipelineRunner:
         self._graph = build_graph()
 
     async def run(self, state: PipelineState) -> PipelineState:
-        result = await self._graph.ainvoke(state)
-        return result
+        from app.pipeline.logging import LangGraphCallbackTracker, PipelineTracker
+
+        job_id = state.get("job_id", "unknown")
+        on_phase_change = self._make_on_phase_change(job_id)
+        tracker = PipelineTracker(job_id, on_phase_change=on_phase_change)
+        callback = LangGraphCallbackTracker(tracker, state=state)
+
+        try:
+            result = await self._graph.ainvoke(
+                state,
+                config={"callbacks": [callback]},
+            )
+            tracker.pipeline_summary()
+            return result
+        except Exception:
+            tracker.pipeline_summary()
+            raise
+
+    @staticmethod
+    def _make_on_phase_change(job_id: str):
+        """Phase 전환 시 job_manager를 갱신하는 콜백을 생성한다."""
+        def _on_phase_change(phase: int, progress: float, current_node: str | None = None):
+            try:
+                from app.services import job_manager
+                job_manager.update_job(
+                    job_id,
+                    current_phase=phase,
+                    progress=round(progress, 4),
+                    current_node=current_node,
+                )
+            except Exception as e:
+                logger.warning(f"[{job_id}] Phase 전환 갱신 실패: {e}")
+        return _on_phase_change
 
 
 # 싱글턴 인스턴스
