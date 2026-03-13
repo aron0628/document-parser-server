@@ -7,7 +7,7 @@ import traceback
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, File, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from app.config import settings
@@ -80,10 +80,10 @@ async def parse_pdf(
     background_tasks: BackgroundTasks,
     request: Request,
     file: UploadFile = File(...),
-    language: str = "Korean",
-    include_image: str = "true",
-    batch_size: str = "30",
-    test_page: Optional[str] = None,
+    language: str = Form("Korean"),
+    include_image: str = Form("true"),
+    batch_size: str = Form("30"),
+    test_page: Optional[str] = Form(None),
     x_upstage_api_key: Optional[str] = Header(None, alias="X-UPSTAGE-API-KEY"),
     x_openai_api_key: Optional[str] = Header(None, alias="X-OPENAI-API-KEY"),
 ) -> ParseResponse:
