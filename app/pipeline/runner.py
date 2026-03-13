@@ -35,9 +35,15 @@ class LangGraphPipelineRunner:
         callback = LangGraphCallbackTracker(tracker, state=state)
 
         try:
+            batch_count = len(state.get("pdf_chunks", []))
+            recursion_limit = max(100, batch_count * 3 + 50)
+
             result = await self._graph.ainvoke(
                 state,
-                config={"callbacks": [callback]},
+                config={
+                    "callbacks": [callback],
+                    "recursion_limit": recursion_limit,
+                },
             )
             tracker.pipeline_summary()
             return result
