@@ -16,11 +16,6 @@ from app.models.state import PipelineState
 logger = logging.getLogger(__name__)
 
 
-def check_embedding(state: PipelineState) -> bool:
-    """임베딩 활성화 여부 확인 (conditional_edges용)"""
-    return state.get("enable_embedding", False)
-
-
 def _split_documents(
     documents: List[Document],
     chunk_size: int,
@@ -46,6 +41,10 @@ def _split_documents(
 async def embedding_node(state: PipelineState) -> dict:
     """pickle에서 Document 로드 후 텍스트 분할, Upstage 임베딩 생성 및 DB 저장"""
     job_id = state["job_id"]
+
+    if not state.get("enable_embedding", False):
+        logger.info(f"[{job_id}] 임베딩 비활성화 상태, 스킵")
+        return {"embedding_count": 0}
 
     try:
         # pickle 로드

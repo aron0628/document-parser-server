@@ -25,34 +25,6 @@ if "pgvector" not in sys.modules:
 
 
 # ---------------------------------------------------------------------------
-# check_embedding 단위 테스트
-# ---------------------------------------------------------------------------
-
-
-def test_check_embedding_false():
-    """enable_embedding 없는 state → False 반환"""
-    from app.pipeline.nodes.embedding import check_embedding
-
-    state = {"job_id": "test-job", "upstage_api_key": "key"}
-    assert check_embedding(state) is False
-
-
-def test_check_embedding_true():
-    """enable_embedding=True → True 반환"""
-    from app.pipeline.nodes.embedding import check_embedding
-
-    state = {"job_id": "test-job", "enable_embedding": True}
-    assert check_embedding(state) is True
-
-
-def test_check_embedding_missing_key():
-    """빈 dict → False 반환"""
-    from app.pipeline.nodes.embedding import check_embedding
-
-    assert check_embedding({}) is False
-
-
-# ---------------------------------------------------------------------------
 # _split_documents 단위 테스트
 # ---------------------------------------------------------------------------
 
@@ -245,6 +217,7 @@ async def test_embedding_node_empty_documents(tmp_path):
         "job_id": "test-job-empty",
         "pkl_path": str(pkl_file),
         "upstage_api_key": "test-key",
+        "enable_embedding": True,
     }
 
     result = await embedding_node(state)
@@ -270,6 +243,7 @@ async def test_embedding_node_api_error(tmp_path):
         "job_id": "test-job-api-error",
         "pkl_path": str(pkl_file),
         "upstage_api_key": "test-key",
+        "enable_embedding": True,
     }
 
     with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client):
@@ -305,6 +279,7 @@ async def test_embedding_node_db_error(tmp_path):
         "job_id": "test-job-db-error",
         "pkl_path": str(pkl_file),
         "upstage_api_key": "test-key",
+        "enable_embedding": True,
     }
 
     with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client), \
@@ -356,6 +331,7 @@ async def test_embedding_node_batch_split(tmp_path):
         "job_id": "test-job-batch",
         "pkl_path": str(pkl_file),
         "upstage_api_key": "test-key",
+        "enable_embedding": True,
     }
 
     with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client), \
@@ -387,43 +363,15 @@ def test_build_graph():
     assert "langchain_document" in node_names
 
 
-async def test_graph_embedding_enabled(tmp_path):
-    """enable_embedding=True state로 그래프 실행 시 embedding 노드 경유 (mock)"""
-    from app.pipeline.nodes.embedding import check_embedding
-
-    state = {
-        "job_id": "test-graph-enabled",
-        "enable_embedding": True,
-        "pkl_path": str(tmp_path / "dummy.pkl"),
-    }
-
-    # check_embedding이 True를 반환하는지 확인
-    assert check_embedding(state) is True
-
-
-async def test_graph_embedding_disabled():
-    """enable_embedding=False state로 그래프 실행 시 embedding 노드 스킵"""
-    from app.pipeline.nodes.embedding import check_embedding
-
-    state = {
-        "job_id": "test-graph-disabled",
-        "enable_embedding": False,
-    }
-
-    assert check_embedding(state) is False
-
-
-def test_check_embedding_conditional():
-    """check_embedding 함수가 conditional_edges에서 올바르게 라우팅"""
+def test_graph_langchain_to_embedding():
+    """langchain_document → embedding 직접 연결 확인"""
     from app.pipeline.graph import build_graph
 
     compiled = build_graph()
     graph_def = compiled.get_graph()
 
-    # langchain_document 노드에서 출발하는 엣지 확인
     edges = list(graph_def.edges)
     langchain_doc_edges = [e for e in edges if e[0] == "langchain_document"]
 
-    # True → embedding, False → __end__ 엣지가 존재해야 함
     targets = {e[1] for e in langchain_doc_edges}
     assert "embedding" in targets

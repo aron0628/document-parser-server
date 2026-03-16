@@ -81,6 +81,7 @@ def get_runner() -> LangGraphPipelineRunner:
 
 async def run_pipeline(job_id: str, pdf_path: str, params: Dict[str, Any]) -> PipelineState:
     """파이프라인 실행 편의 함수"""
+    enable_embedding = params.get("enable_embedding", False)
     initial_state: PipelineState = {
         "pdf_path": pdf_path,
         "language": params["language"],
@@ -93,10 +94,15 @@ async def run_pipeline(job_id: str, pdf_path: str, params: Dict[str, Any]) -> Pi
         "pdf_chunks": [],
         "current_batch_index": 0,
         "batch_parse_results": [],
-        "enable_embedding": params.get("enable_embedding", False),
+        "enable_embedding": enable_embedding,
         "embedding_model": params.get("embedding_model", "embedding-passage"),
         "chunk_size": params.get("chunk_size", 1000),
         "chunk_overlap": params.get("chunk_overlap", 200),
     }
+    logger.info(
+        f"[{job_id}] 파이프라인 시작 — enable_embedding={enable_embedding}, "
+        f"embedding_model={initial_state['embedding_model']}, "
+        f"chunk_size={initial_state['chunk_size']}, chunk_overlap={initial_state['chunk_overlap']}"
+    )
     runner = get_runner()
     return await runner.run(initial_state)

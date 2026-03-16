@@ -30,7 +30,7 @@ from app.pipeline.nodes.export_html import export_html_node
 from app.pipeline.nodes.export_markdown import export_markdown_node
 from app.pipeline.nodes.export_table_csv import export_table_csv_node
 from app.pipeline.nodes.langchain_document import langchain_document_node
-from app.pipeline.nodes.embedding import check_embedding, embedding_node
+from app.pipeline.nodes.embedding import embedding_node
 
 
 def build_graph() -> StateGraph:
@@ -94,11 +94,7 @@ def build_graph() -> StateGraph:
 
     # Enriched export (after entity extraction)
     graph.add_edge("reconstruct_elements", "langchain_document")
-    graph.add_conditional_edges(
-        "langchain_document",
-        check_embedding,
-        {True: "embedding", False: END},
-    )
+    graph.add_edge("langchain_document", "embedding")
     graph.add_edge("embedding", END)
 
     # Quick exports (un-enriched, parallel with entity extraction)
