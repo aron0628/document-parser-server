@@ -108,13 +108,14 @@ async def embedding_node(state: PipelineState) -> dict:
         try:
             pool = get_pool()
             async with pool.connection() as conn:
-                await conn.executemany(
-                    """INSERT INTO document_embeddings
-                       (job_id, element_index, parent_element_index, chunk_index,
-                        page, element_type, content, metadata, embedding)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                    records,
-                )
+                async with conn.cursor() as cur:
+                    await cur.executemany(
+                        """INSERT INTO document_embeddings
+                           (job_id, element_index, parent_element_index, chunk_index,
+                            page, element_type, content, metadata, embedding)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        records,
+                    )
                 await conn.commit()
         except Exception as e:
             logger.error(f"[{job_id}] DB 임베딩 저장 실패: {e}")
