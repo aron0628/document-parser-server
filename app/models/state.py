@@ -15,7 +15,6 @@ class PipelineState(TypedDict, total=False):
     upstage_api_key: str
     openai_api_key: str
     job_id: str
-    enable_embedding: bool          # 임베딩 활성화 여부. 기본값: False
     embedding_model: str            # 임베딩 모델명. 기본값: "embedding-passage"
     chunk_size: int                 # 텍스트 분할 크기. 기본값: 1000
     chunk_overlap: int              # 텍스트 분할 오버랩. 기본값: 200

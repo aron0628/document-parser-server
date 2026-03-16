@@ -42,10 +42,6 @@ async def embedding_node(state: PipelineState) -> dict:
     """pickle에서 Document 로드 후 텍스트 분할, Upstage 임베딩 생성 및 DB 저장"""
     job_id = state["job_id"]
 
-    if not state.get("enable_embedding", False):
-        logger.info(f"[{job_id}] 임베딩 비활성화 상태, 스킵")
-        return {"embedding_count": 0}
-
     try:
         # pickle 로드
         pkl_path = state["pkl_path"]

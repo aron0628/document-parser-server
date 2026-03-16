@@ -126,7 +126,6 @@ async def test_embedding_node_success(tmp_path):
         "job_id": "test-job-success",
         "pkl_path": str(pkl_file),
         "upstage_api_key": "test-key",
-        "enable_embedding": True,
     }
 
     with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client), \
@@ -186,7 +185,6 @@ async def test_embedding_node_with_splitting(tmp_path):
         "job_id": "test-job-split",
         "pkl_path": str(pkl_file),
         "upstage_api_key": "test-key",
-        "enable_embedding": True,
         "chunk_size": 500,
         "chunk_overlap": 100,
     }
@@ -217,7 +215,6 @@ async def test_embedding_node_empty_documents(tmp_path):
         "job_id": "test-job-empty",
         "pkl_path": str(pkl_file),
         "upstage_api_key": "test-key",
-        "enable_embedding": True,
     }
 
     result = await embedding_node(state)
@@ -243,7 +240,6 @@ async def test_embedding_node_api_error(tmp_path):
         "job_id": "test-job-api-error",
         "pkl_path": str(pkl_file),
         "upstage_api_key": "test-key",
-        "enable_embedding": True,
     }
 
     with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client):
@@ -279,7 +275,6 @@ async def test_embedding_node_db_error(tmp_path):
         "job_id": "test-job-db-error",
         "pkl_path": str(pkl_file),
         "upstage_api_key": "test-key",
-        "enable_embedding": True,
     }
 
     with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client), \
@@ -331,7 +326,6 @@ async def test_embedding_node_batch_split(tmp_path):
         "job_id": "test-job-batch",
         "pkl_path": str(pkl_file),
         "upstage_api_key": "test-key",
-        "enable_embedding": True,
     }
 
     with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client), \
