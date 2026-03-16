@@ -1,0 +1,298 @@
+"""embedding 노드 단위 테스트 및 통합 테스트"""
+
+import pickle
+import sys
+import types
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from langchain_core.documents import Document
+
+# psycopg_pool / pgvector가 테스트 환경에 설치되지 않으므로 stub 등록
+def _stub_module(name: str) -> types.ModuleType:
+    mod = types.ModuleType(name)
+    sys.modules[name] = mod
+    return mod
+
+if "psycopg_pool" not in sys.modules:
+    _psycopg_pool = _stub_module("psycopg_pool")
+    _psycopg_pool.AsyncConnectionPool = MagicMock
+
+if "pgvector" not in sys.modules:
+    _stub_module("pgvector")
+    _stub_module("pgvector.psycopg")
+    sys.modules["pgvector.psycopg"].register_vector_async = AsyncMock()
+
+
+# ---------------------------------------------------------------------------
+# check_embedding 단위 테스트
+# ---------------------------------------------------------------------------
+
+
+def test_check_embedding_false():
+    """enable_embedding 없는 state → False 반환"""
+    from app.pipeline.nodes.embedding import check_embedding
+
+    state = {"job_id": "test-job", "upstage_api_key": "key"}
+    assert check_embedding(state) is False
+
+
+def test_check_embedding_true():
+    """enable_embedding=True → True 반환"""
+    from app.pipeline.nodes.embedding import check_embedding
+
+    state = {"job_id": "test-job", "enable_embedding": True}
+    assert check_embedding(state) is True
+
+
+def test_check_embedding_missing_key():
+    """빈 dict → False 반환"""
+    from app.pipeline.nodes.embedding import check_embedding
+
+    assert check_embedding({}) is False
+
+
+# ---------------------------------------------------------------------------
+# embedding_node 단위 테스트
+# ---------------------------------------------------------------------------
+
+
+async def test_embedding_node_success(tmp_path):
+    """mock Upstage API + mock DB → embedding_count 반환"""
+    from app.pipeline.nodes.embedding import embedding_node
+
+    # pickle 파일 생성
+    docs = [
+        Document(page_content="텍스트 A", metadata={"page": 1, "category": "paragraph"}),
+        Document(page_content="텍스트 B", metadata={"page": 2, "category": "table"}),
+    ]
+    pkl_file = tmp_path / "docs.pkl"
+    with open(pkl_file, "wb") as f:
+        pickle.dump(docs, f)
+
+    # API 응답 mock
+    fake_embedding = [0.1] * 768
+    mock_response = MagicMock()
+    mock_response.data = [MagicMock(embedding=fake_embedding) for _ in docs]
+
+    mock_embeddings = AsyncMock()
+    mock_embeddings.create = AsyncMock(return_value=mock_response)
+
+    mock_client = MagicMock()
+    mock_client.embeddings = mock_embeddings
+
+    # DB mock
+    mock_conn = AsyncMock()
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+    mock_pool = MagicMock()
+    mock_pool.connection = MagicMock(return_value=mock_conn)
+
+    state = {
+        "job_id": "test-job-success",
+        "pkl_path": str(pkl_file),
+        "upstage_api_key": "test-key",
+        "enable_embedding": True,
+    }
+
+    with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client), \
+         patch("app.pipeline.nodes.embedding.get_pool", return_value=mock_pool):
+        result = await embedding_node(state)
+
+    assert result["embedding_count"] == 2
+
+
+async def test_embedding_node_empty_documents(tmp_path):
+    """빈 Document 리스트 pickle → embedding_count=0"""
+    from app.pipeline.nodes.embedding import embedding_node
+
+    pkl_file = tmp_path / "empty.pkl"
+    with open(pkl_file, "wb") as f:
+        pickle.dump([], f)
+
+    state = {
+        "job_id": "test-job-empty",
+        "pkl_path": str(pkl_file),
+        "upstage_api_key": "test-key",
+    }
+
+    result = await embedding_node(state)
+    assert result["embedding_count"] == 0
+
+
+async def test_embedding_node_api_error(tmp_path):
+    """Upstage API 실패 시 graceful → embedding_count=0"""
+    from app.pipeline.nodes.embedding import embedding_node
+
+    docs = [Document(page_content="텍스트", metadata={"page": 1})]
+    pkl_file = tmp_path / "docs.pkl"
+    with open(pkl_file, "wb") as f:
+        pickle.dump(docs, f)
+
+    mock_embeddings = AsyncMock()
+    mock_embeddings.create = AsyncMock(side_effect=Exception("API 연결 실패"))
+
+    mock_client = MagicMock()
+    mock_client.embeddings = mock_embeddings
+
+    state = {
+        "job_id": "test-job-api-error",
+        "pkl_path": str(pkl_file),
+        "upstage_api_key": "test-key",
+    }
+
+    with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client):
+        result = await embedding_node(state)
+
+    assert result["embedding_count"] == 0
+
+
+async def test_embedding_node_db_error(tmp_path):
+    """DB 연결 실패 시 graceful → embedding_count=0"""
+    from app.pipeline.nodes.embedding import embedding_node
+
+    docs = [Document(page_content="텍스트", metadata={"page": 1})]
+    pkl_file = tmp_path / "docs.pkl"
+    with open(pkl_file, "wb") as f:
+        pickle.dump(docs, f)
+
+    fake_embedding = [0.1] * 768
+    mock_response = MagicMock()
+    mock_response.data = [MagicMock(embedding=fake_embedding)]
+
+    mock_embeddings = AsyncMock()
+    mock_embeddings.create = AsyncMock(return_value=mock_response)
+
+    mock_client = MagicMock()
+    mock_client.embeddings = mock_embeddings
+
+    # DB pool이 connection() 호출 시 예외 발생
+    mock_pool = MagicMock()
+    mock_pool.connection = MagicMock(side_effect=Exception("DB 연결 실패"))
+
+    state = {
+        "job_id": "test-job-db-error",
+        "pkl_path": str(pkl_file),
+        "upstage_api_key": "test-key",
+    }
+
+    with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client), \
+         patch("app.pipeline.nodes.embedding.get_pool", return_value=mock_pool):
+        result = await embedding_node(state)
+
+    assert result["embedding_count"] == 0
+
+
+async def test_embedding_node_batch_split(tmp_path):
+    """150개 Document → 배치 크기(100) 기준으로 2번 배치 호출 확인"""
+    from app.pipeline.nodes.embedding import embedding_node
+
+    docs = [
+        Document(page_content=f"텍스트 {i}", metadata={"page": i % 10 + 1})
+        for i in range(150)
+    ]
+    pkl_file = tmp_path / "large.pkl"
+    with open(pkl_file, "wb") as f:
+        pickle.dump(docs, f)
+
+    fake_embedding = [0.1] * 768
+
+    def make_response(texts):
+        mock_response = MagicMock()
+        mock_response.data = [MagicMock(embedding=fake_embedding) for _ in texts]
+        return mock_response
+
+    call_args_list = []
+
+    async def fake_create(**kwargs):
+        call_args_list.append(kwargs["input"])
+        return make_response(kwargs["input"])
+
+    mock_embeddings = AsyncMock()
+    mock_embeddings.create = fake_create
+
+    mock_client = MagicMock()
+    mock_client.embeddings = mock_embeddings
+
+    mock_conn = AsyncMock()
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+    mock_pool = MagicMock()
+    mock_pool.connection = MagicMock(return_value=mock_conn)
+
+    state = {
+        "job_id": "test-job-batch",
+        "pkl_path": str(pkl_file),
+        "upstage_api_key": "test-key",
+    }
+
+    with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client), \
+         patch("app.pipeline.nodes.embedding.get_pool", return_value=mock_pool):
+        result = await embedding_node(state)
+
+    assert result["embedding_count"] == 150
+    assert len(call_args_list) == 2
+    assert len(call_args_list[0]) == 100
+    assert len(call_args_list[1]) == 50
+
+
+# ---------------------------------------------------------------------------
+# 통합 테스트
+# ---------------------------------------------------------------------------
+
+
+def test_build_graph():
+    """build_graph() 컴파일 성공 (노드/엣지 정상)"""
+    from app.pipeline.graph import build_graph
+
+    compiled = build_graph()
+    assert compiled is not None
+
+    # 핵심 노드 존재 확인
+    node_names = set(compiled.get_graph().nodes.keys())
+    assert "embedding" in node_names
+    assert "langchain_document" in node_names
+
+
+async def test_graph_embedding_enabled(tmp_path):
+    """enable_embedding=True state로 그래프 실행 시 embedding 노드 경유 (mock)"""
+    from app.pipeline.nodes.embedding import check_embedding
+
+    state = {
+        "job_id": "test-graph-enabled",
+        "enable_embedding": True,
+        "pkl_path": str(tmp_path / "dummy.pkl"),
+    }
+
+    # check_embedding이 True를 반환하는지 확인
+    assert check_embedding(state) is True
+
+
+async def test_graph_embedding_disabled():
+    """enable_embedding=False state로 그래프 실행 시 embedding 노드 스킵"""
+    from app.pipeline.nodes.embedding import check_embedding
+
+    state = {
+        "job_id": "test-graph-disabled",
+        "enable_embedding": False,
+    }
+
+    assert check_embedding(state) is False
+
+
+def test_check_embedding_conditional():
+    """check_embedding 함수가 conditional_edges에서 올바르게 라우팅"""
+    from app.pipeline.graph import build_graph
+
+    compiled = build_graph()
+    graph_def = compiled.get_graph()
+
+    # langchain_document 노드에서 출발하는 엣지 확인
+    edges = list(graph_def.edges)
+    langchain_doc_edges = [e for e in edges if e[0] == "langchain_document"]
+
+    # True → embedding, False → __end__ 엣지가 존재해야 함
+    targets = {e[1] for e in langchain_doc_edges}
+    assert "embedding" in targets

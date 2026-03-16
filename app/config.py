@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     result_volume: str = "./result"
     uploads_volume: str = "./uploads"
 
+    # Embedding
+    default_embedding_model: str = "embedding-passage"
+    embedding_batch_size: int = 100
+
+    # Database
+    database_url: str = "postgresql://parser:parser@localhost:5432/document_parser"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

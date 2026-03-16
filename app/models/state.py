@@ -15,6 +15,8 @@ class PipelineState(TypedDict, total=False):
     upstage_api_key: str
     openai_api_key: str
     job_id: str
+    enable_embedding: bool          # 임베딩 활성화 여부. 기본값: False
+    embedding_model: str            # 임베딩 모델명. 기본값: "embedding-passage"
 
     # Phase 1: Document Parse
     pdf_chunks: List[str]           # 분할된 PDF 파일 경로 목록
@@ -37,3 +39,4 @@ class PipelineState(TypedDict, total=False):
     csv_path: Optional[str]         # un-enriched 요소 기반
     pkl_path: Optional[str]         # enriched 요소 기반
     zip_path: Optional[str]
+    embedding_count: Optional[int]  # 임베딩 처리된 Document 수. 기본값: None

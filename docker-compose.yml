@@ -21,6 +21,9 @@ services:
       - PORT=${PORT:-9997}
       - RUN_MODE=api
       - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-100}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://parser:parser@db:5432/document_parser}
+    depends_on:
+      - db
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:${PORT:-9997}/health').raise_for_status()"]
       interval: 30s
@@ -36,3 +39,17 @@ services:
           cpus: '0.5'
           memory: 1G
     command: ["api"]
+
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: parser
+      POSTGRES_PASSWORD: parser
+      POSTGRES_DB: document_parser
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

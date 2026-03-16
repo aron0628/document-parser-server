@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
 from app.config import settings
+from app.db import close_pool, init_db
 from app.logging_config import setup_logging
 
 
@@ -24,8 +25,12 @@ async def lifespan(app: FastAPI):
     ]:
         dir_path.mkdir(parents=True, exist_ok=True)
 
+    await init_db()
+
     yield
-    # Shutdown: cleanup if needed
+
+    # Shutdown
+    await close_pool()
 
 
 app = FastAPI(

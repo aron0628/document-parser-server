@@ -30,6 +30,7 @@ PIPELINE_NODES: list[tuple[str, int, str]] = [
     ("reconstruct_elements", 2, "요소 재구성"),
     # Phase 3
     ("langchain_document", 3, "LangChain Document 생성"),
+    ("embedding", 3, "벡터 임베딩 생성"),
     ("export_html", 3, "HTML 내보내기"),
     ("export_markdown", 3, "Markdown 내보내기"),
     ("export_table_csv", 3, "CSV 내보내기"),

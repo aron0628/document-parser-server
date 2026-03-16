@@ -84,6 +84,8 @@ async def parse_pdf(
     include_image: str = Form("true"),
     batch_size: str = Form("30"),
     test_page: Optional[str] = Form(None),
+    enable_embedding: str = Form("false"),
+    embedding_model: Optional[str] = Form(None),
     x_upstage_api_key: Optional[str] = Header(None, alias="X-UPSTAGE-API-KEY"),
     x_openai_api_key: Optional[str] = Header(None, alias="X-OPENAI-API-KEY"),
 ) -> ParseResponse:
@@ -107,6 +109,8 @@ async def parse_pdf(
         "include_image": include_image.lower() == "true",
         "batch_size": int(batch_size),
         "test_page": int(test_page) if test_page is not None else None,
+        "enable_embedding": enable_embedding.lower() == "true",
+        "embedding_model": embedding_model or settings.default_embedding_model,
         "upstage_api_key": upstage_key,
         "openai_api_key": openai_key,
     }
