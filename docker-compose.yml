@@ -21,7 +21,11 @@ services:
       - PORT=${PORT:-9997}
       - RUN_MODE=api
       - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-100}
-      - DATABASE_URL=${DATABASE_URL:-postgresql://parser:parser@db:5432/document_parser}
+      - DB_HOST=${DB_HOST:-db}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-document_parser}
+      - DB_USER=${DB_USER:-parser}
+      - DB_PASSWORD=${DB_PASSWORD:-parser}
     depends_on:
       - db
     healthcheck:
