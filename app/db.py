@@ -13,53 +13,13 @@ logger = logging.getLogger(__name__)
 
 _pool: Optional[psycopg_pool.AsyncConnectionPool] = None
 
-_CREATE_EXTENSION_SQL = "CREATE EXTENSION IF NOT EXISTS vector;"
-
-_CREATE_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS document_embeddings (
-    id BIGSERIAL PRIMARY KEY,
-    job_id VARCHAR(64) NOT NULL,
-    element_index INTEGER NOT NULL,
-    parent_element_index INTEGER,
-    chunk_index INTEGER DEFAULT 0,
-    page INTEGER,
-    element_type VARCHAR(32),
-    content TEXT NOT NULL,
-    metadata JSONB DEFAULT '{}',
-    embedding vector(4096) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-"""
-
-_MIGRATE_ADD_CHUNK_COLUMNS_SQL = """
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'document_embeddings' AND column_name = 'parent_element_index'
-    ) THEN
-        ALTER TABLE document_embeddings ADD COLUMN parent_element_index INTEGER;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'document_embeddings' AND column_name = 'chunk_index'
-    ) THEN
-        ALTER TABLE document_embeddings ADD COLUMN chunk_index INTEGER DEFAULT 0;
-    END IF;
-END $$;
-"""
-
-_CREATE_INDEX_JOB_ID_SQL = """
-CREATE INDEX IF NOT EXISTS idx_doc_emb_job_id ON document_embeddings (job_id);
-"""
-
-_CREATE_INDEX_JOB_TYPE_SQL = """
-CREATE INDEX IF NOT EXISTS idx_doc_emb_job_type ON document_embeddings (job_id, element_type);
-"""
-
 
 async def init_db() -> None:
-    """커넥션 풀 생성, vector 타입 등록, 테이블/인덱스 생성"""
+    """커넥션 풀 생성 및 vector 타입 등록
+
+    DB 연결에 실패해도 서버는 정상 기동된다.
+    임베딩 기능만 비활성화 상태로 동작한다.
+    """
     global _pool
 
     logger.info("DB 초기화 시작")
@@ -69,28 +29,31 @@ async def init_db() -> None:
         f"@{settings.db_host}:{settings.db_port}/{settings.db_name}"
     )
 
-    _pool = psycopg_pool.AsyncConnectionPool(
-        database_url,
-        open=False,
-        min_size=4,
-        max_size=10,
-        max_idle=300.0,
-        check=psycopg_pool.AsyncConnectionPool.check_connection,
-    )
-    await _pool.open()
-    logger.info("커넥션 풀 생성 완료")
+    try:
+        _pool = psycopg_pool.AsyncConnectionPool(
+            database_url,
+            open=False,
+            min_size=4,
+            max_size=10,
+            max_idle=300.0,
+            check=psycopg_pool.AsyncConnectionPool.check_connection,
+        )
+        await _pool.open()
+        logger.info("커넥션 풀 생성 완료")
+    except Exception as e:
+        logger.warning(f"DB 커넥션 풀 생성 실패 (임베딩 비활성화): {e}")
+        _pool = None
+        return
 
-    async with _pool.connection() as conn:
-        await register_vector_async(conn)
-        logger.info("vector 타입 등록 완료")
-
-        await conn.execute(_CREATE_EXTENSION_SQL)
-        await conn.execute(_CREATE_TABLE_SQL)
-        await conn.execute(_MIGRATE_ADD_CHUNK_COLUMNS_SQL)
-        await conn.execute(_CREATE_INDEX_JOB_ID_SQL)
-        await conn.execute(_CREATE_INDEX_JOB_TYPE_SQL)
-        await conn.commit()
-        logger.info("테이블 및 인덱스 생성 완료")
+    try:
+        async with _pool.connection() as conn:
+            await register_vector_async(conn)
+            logger.info("vector 타입 등록 완료")
+    except Exception as e:
+        logger.warning(f"vector 타입 등록 실패 (임베딩 비활성화): {e}")
+        await _pool.close()
+        _pool = None
+        return
 
     logger.info("DB 초기화 완료")
 
