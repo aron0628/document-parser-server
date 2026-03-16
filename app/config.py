@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     # Embedding
     default_embedding_model: str = "embedding-passage"
     embedding_batch_size: int = 100
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
 
     # Database
     db_host: str = "localhost"

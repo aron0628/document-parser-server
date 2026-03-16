@@ -17,6 +17,8 @@ class PipelineState(TypedDict, total=False):
     job_id: str
     enable_embedding: bool          # 임베딩 활성화 여부. 기본값: False
     embedding_model: str            # 임베딩 모델명. 기본값: "embedding-passage"
+    chunk_size: int                 # 텍스트 분할 크기. 기본값: 1000
+    chunk_overlap: int              # 텍스트 분할 오버랩. 기본값: 200
 
     # Phase 1: Document Parse
     pdf_chunks: List[str]           # 분할된 PDF 파일 경로 목록

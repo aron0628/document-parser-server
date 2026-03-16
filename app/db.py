@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS document_embeddings (
     id BIGSERIAL PRIMARY KEY,
     job_id VARCHAR(64) NOT NULL,
     element_index INTEGER NOT NULL,
+    parent_element_index INTEGER,
+    chunk_index INTEGER DEFAULT 0,
     page INTEGER,
     element_type VARCHAR(32),
     content TEXT NOT NULL,
@@ -27,6 +29,24 @@ CREATE TABLE IF NOT EXISTS document_embeddings (
     embedding vector(4096) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+"""
+
+_MIGRATE_ADD_CHUNK_COLUMNS_SQL = """
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'document_embeddings' AND column_name = 'parent_element_index'
+    ) THEN
+        ALTER TABLE document_embeddings ADD COLUMN parent_element_index INTEGER;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'document_embeddings' AND column_name = 'chunk_index'
+    ) THEN
+        ALTER TABLE document_embeddings ADD COLUMN chunk_index INTEGER DEFAULT 0;
+    END IF;
+END $$;
 """
 
 _CREATE_INDEX_JOB_ID_SQL = """
@@ -66,6 +86,7 @@ async def init_db() -> None:
 
         await conn.execute(_CREATE_EXTENSION_SQL)
         await conn.execute(_CREATE_TABLE_SQL)
+        await conn.execute(_MIGRATE_ADD_CHUNK_COLUMNS_SQL)
         await conn.execute(_CREATE_INDEX_JOB_ID_SQL)
         await conn.execute(_CREATE_INDEX_JOB_TYPE_SQL)
         await conn.commit()

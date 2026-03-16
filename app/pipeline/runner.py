@@ -95,6 +95,8 @@ async def run_pipeline(job_id: str, pdf_path: str, params: Dict[str, Any]) -> Pi
         "batch_parse_results": [],
         "enable_embedding": params.get("enable_embedding", False),
         "embedding_model": params.get("embedding_model", "embedding-passage"),
+        "chunk_size": params.get("chunk_size", 1000),
+        "chunk_overlap": params.get("chunk_overlap", 200),
     }
     runner = get_runner()
     return await runner.run(initial_state)
