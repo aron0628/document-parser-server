@@ -27,7 +27,11 @@ class Settings(BaseSettings):
     embedding_batch_size: int = 100
 
     # Database
-    database_url: str = "postgresql://parser:parser@localhost:5432/document_parser"
+    db_host: str = "localhost"
+    db_port: int = 5432
+    db_name: str = "document_parser"
+    db_user: str = "parser"
+    db_password: str = "parser"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

@@ -2,6 +2,7 @@
 
 import logging
 from typing import Optional
+from urllib.parse import quote_plus
 
 import psycopg_pool
 from pgvector.psycopg import register_vector_async
@@ -43,9 +44,18 @@ async def init_db() -> None:
 
     logger.info("DB 초기화 시작")
 
+    database_url = (
+        f"postgresql://{quote_plus(settings.db_user)}:{quote_plus(settings.db_password)}"
+        f"@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+    )
+
     _pool = psycopg_pool.AsyncConnectionPool(
-        settings.database_url,
+        database_url,
         open=False,
+        min_size=4,
+        max_size=10,
+        max_idle=300.0,
+        check=psycopg_pool.AsyncConnectionPool.check_connection,
     )
     await _pool.open()
     logger.info("커넥션 풀 생성 완료")
