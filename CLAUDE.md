@@ -1,14 +1,14 @@
 # Document Parser Server
 
 ## Overview
-PDF 파싱 API 서버. Upstage(레이아웃 분석) + OpenAI(이미지/테이블 엔티티 추출) 파이프라인.
+PDF 파싱 API 서버. Upstage(레이아웃 분석) + OpenAI(이미지/테이블 엔티티 추출) + 벡터 임베딩(Upstage Embedding → PostgreSQL/pgvector) 파이프라인.
 
 ## Build & Run
 ```bash
 uv sync --dev
 uv run uvicorn app.main:app --host 0.0.0.0 --port 9997
 
-# Docker
+# Docker (API + PostgreSQL/pgvector)
 docker compose up --build
 
 # Test
@@ -16,10 +16,27 @@ uv run pytest
 ```
 
 ## Architecture
-- **FastAPI** 서버 (`app/main.py`)
-- **LangGraph** 파이프라인 (`app/pipeline/graph.py`) — 14 nodes, 3 phases
+- **FastAPI** 서버 (`app/main.py`) — lifespan에서 디렉토리 생성 + DB 초기화
+- **LangGraph** 파이프라인 (`app/pipeline/graph.py`) — 16 nodes, 3 phases
 - **File-based job storage** — `data/jobs/{job_id}.json`
+- **PostgreSQL + pgvector** — 벡터 임베딩 저장 (`document_embeddings` 테이블). DB 실패 시 서버 정상 기동(임베딩만 비활성화)
 - **Background task** — `_run_pipeline` in routes.py
+
+### Pipeline Flow
+```
+Phase 1 (50%): split_pdf → working_queue ⟲ document_parse → post_document_parse
+Phase 2 (35%): create_elements → export_image → [fan-out]
+  Branch A: page_elements_extractor → image/table_entity_extractor → merge_entity → reconstruct_elements
+  Branch B: export_html, export_markdown, export_table_csv (parallel, un-enriched)
+Phase 3 (15%): langchain_document → embedding → END
+```
+
+### API Endpoints (5개)
+- `GET /health` — 서버 상태 확인
+- `POST /parse` — PDF 업로드 및 파싱 작업 요청
+- `GET /status/{job_id}` — 작업 상태 확인 (phase, progress 포함)
+- `GET /download/{job_id}` — 결과 ZIP 다운로드
+- `GET /jobs` — 전체 작업 목록 조회
 
 ## Client
 - Python 클라이언트: `/Users/aron/Documents/lab/document-parser-client`
@@ -29,9 +46,11 @@ uv run pytest
 ## Key Rules
 - All external HTTP calls use `httpx.AsyncClient` (no `requests`)
 - Pipeline nodes are async functions taking `PipelineState`, returning `dict`
+- 병렬 브랜치 노드는 서로 다른 state 키에만 기록 (키 충돌 금지)
 - ZIP structure: `{job_id}/{job_id}_{base_name}.ext`
-- API keys: header (`X-UPSTAGE-API-KEY`) → env var fallback
+- API keys: header (`X-UPSTAGE-API-KEY`, `X-OPENAI-API-KEY`) → env var fallback
 - String→typed conversion happens in `routes.py`, not in pipeline nodes
+- 새 노드 추가 시: (1) `nodes/` 파일, (2) `graph.py` 등록, (3) `logging.py` PIPELINE_NODES, (4) `state.py` 키 추가
 
 ## Git Commit/Push 정책
 - 커밋 메시지는 한글로 작성
@@ -41,14 +60,24 @@ uv run pytest
 ## Directory Structure
 ```
 app/
-├── api/routes.py          # 5 API endpoints
-├── config.py              # Pydantic Settings
-├── models/                # schemas.py, state.py
-├── services/              # job_manager.py, file_manager.py
+├── main.py                # FastAPI 앱 (lifespan, CORS, 라우터)
+├── config.py              # Pydantic Settings (API키, DB, 임베딩, 볼륨)
+├── db.py                  # PostgreSQL 커넥션 풀 + pgvector 등록
+├── logging_config.py      # 중앙 로깅 설정
+├── api/routes.py          # 5 API endpoints + _run_pipeline 백그라운드 태스크
+├── models/
+│   ├── schemas.py         # API 응답 Pydantic 모델 (5개)
+│   └── state.py           # PipelineState TypedDict (25+ 필드)
+├── services/
+│   ├── job_manager.py     # 작업 CRUD (JSON 파일 기반)
+│   └── file_manager.py    # 업로드/작업/결과 디렉토리 관리
 ├── pipeline/
-│   ├── graph.py           # LangGraph StateGraph (14 nodes)
-│   ├── runner.py          # PipelineRunner protocol
-│   ├── nodes/             # 14 node implementations
-│   └── external/          # upstage_client.py, openai_client.py
-└── utils/                 # pdf_utils.py, zip_utils.py
+│   ├── graph.py           # LangGraph StateGraph (16 nodes, conditional edges, fan-out/fan-in)
+│   ├── runner.py          # PipelineRunner 프로토콜 + 싱글턴 실행기
+│   ├── logging.py         # PipelineTracker + LangGraphCallbackTracker (진행률/타이밍)
+│   ├── nodes/             # 16 node implementations (Phase 1~3)
+│   └── external/          # upstage_client.py (레이아웃 분석), openai_client.py (Vision/Chat)
+└── utils/
+    ├── pdf_utils.py       # PDF 분할 (PyPDF2)
+    └── zip_utils.py       # 결과 ZIP 패키징
 ```
