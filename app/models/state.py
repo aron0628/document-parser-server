@@ -41,3 +41,7 @@ class PipelineState(TypedDict, total=False):
     pkl_path: Optional[str]         # enriched 요소 기반
     zip_path: Optional[str]
     embedding_count: Optional[int]  # 임베딩 처리된 Document 수. 기본값: None
+
+    # RAPTOR
+    enable_raptor: bool                              # Per-request RAPTOR 활성화 플래그
+    raptor_level_counts: Optional[Dict[int, int]]    # {level: summary_count} 레벨별 요약 수

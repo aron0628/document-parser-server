@@ -96,11 +96,13 @@ async def run_pipeline(job_id: str, pdf_path: str, params: Dict[str, Any]) -> Pi
         "embedding_model": params.get("embedding_model", "embedding-passage"),
         "chunk_size": params.get("chunk_size", 1000),
         "chunk_overlap": params.get("chunk_overlap", 200),
+        "enable_raptor": params.get("enable_raptor", False),
     }
     logger.info(
         f"[{job_id}] 파이프라인 시작 — "
         f"embedding_model={initial_state['embedding_model']}, "
-        f"chunk_size={initial_state['chunk_size']}, chunk_overlap={initial_state['chunk_overlap']}"
+        f"chunk_size={initial_state['chunk_size']}, chunk_overlap={initial_state['chunk_overlap']}, "
+        f"enable_raptor={initial_state['enable_raptor']}"
     )
     runner = get_runner()
     return await runner.run(initial_state)

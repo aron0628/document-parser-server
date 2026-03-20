@@ -87,6 +87,7 @@ async def parse_pdf(
     embedding_model: Optional[str] = Form(None),
     chunk_size: Optional[str] = Form(None),
     chunk_overlap: Optional[str] = Form(None),
+    enable_raptor: Optional[str] = Form(None),
     x_upstage_api_key: Optional[str] = Header(None, alias="X-UPSTAGE-API-KEY"),
     x_openai_api_key: Optional[str] = Header(None, alias="X-OPENAI-API-KEY"),
 ) -> ParseResponse:
@@ -113,6 +114,7 @@ async def parse_pdf(
         "embedding_model": embedding_model or settings.default_embedding_model,
         "chunk_size": int(chunk_size) if chunk_size is not None else settings.chunk_size,
         "chunk_overlap": int(chunk_overlap) if chunk_overlap is not None else settings.chunk_overlap,
+        "enable_raptor": enable_raptor.lower() == "true" if enable_raptor is not None else settings.enable_raptor,
         "upstage_api_key": upstage_key,
         "openai_api_key": openai_key,
     }

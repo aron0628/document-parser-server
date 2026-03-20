@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     db_user: str = "parser"
     db_password: str = "parser"
 
+    # RAPTOR
+    enable_raptor: bool = False
+    raptor_max_levels: int = 3
+    raptor_cluster_dim: int = 10
+    raptor_cluster_threshold: float = 0.1
+    raptor_summarization_model: str = "gpt-4.1-mini"
+    min_chunks_for_raptor: int = 10
+    max_chunks_for_raptor: int = 500
+    raptor_timeout_seconds: int = 300
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

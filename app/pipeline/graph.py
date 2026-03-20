@@ -31,6 +31,7 @@ from app.pipeline.nodes.export_markdown import export_markdown_node
 from app.pipeline.nodes.export_table_csv import export_table_csv_node
 from app.pipeline.nodes.langchain_document import langchain_document_node
 from app.pipeline.nodes.embedding import embedding_node
+from app.pipeline.nodes.raptor import raptor_node
 
 
 def build_graph() -> StateGraph:
@@ -95,7 +96,18 @@ def build_graph() -> StateGraph:
     # Enriched export (after entity extraction)
     graph.add_edge("reconstruct_elements", "langchain_document")
     graph.add_edge("langchain_document", "embedding")
-    graph.add_edge("embedding", END)
+    # RAPTOR (conditional: enable_raptor 플래그에 따라 분기)
+    graph.add_node("raptor", raptor_node)
+
+    def check_raptor(state: PipelineState) -> bool:
+        return state.get("enable_raptor", False)
+
+    graph.add_conditional_edges(
+        "embedding",
+        check_raptor,
+        {True: "raptor", False: END},
+    )
+    graph.add_edge("raptor", END)
 
     # Quick exports (un-enriched, parallel with entity extraction)
     graph.add_edge("export_image", "export_html")
