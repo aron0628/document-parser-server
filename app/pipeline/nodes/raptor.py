@@ -20,6 +20,7 @@ from umap import UMAP
 from app.config import settings
 from app.db import get_pool
 from app.models.state import PipelineState
+from app.utils.async_utils import gather_with_semaphore
 
 logger = logging.getLogger(__name__)
 
@@ -252,17 +253,6 @@ def _run_clustering_sync(
     return _perform_clustering(embeddings, dim, threshold)
 
 
-async def _gather_with_semaphore(
-    semaphore: asyncio.Semaphore,
-    coros: list,
-) -> list:
-    """세마포어로 동시 실행 수를 제한하며 코루틴 리스트를 병렬 실행"""
-    async def _wrap(coro):
-        async with semaphore:
-            return await coro
-    return await asyncio.gather(*[_wrap(c) for c in coros])
-
-
 async def _recursive_raptor(
     texts: List[str],
     embeddings: np.ndarray,
@@ -307,7 +297,7 @@ async def _recursive_raptor(
         summarize_coros.append(
             _summarize_cluster(cluster_texts, summarize_client, summarize_model)
         )
-    raw_summaries = await _gather_with_semaphore(semaphore, summarize_coros)
+    raw_summaries = await gather_with_semaphore(semaphore, summarize_coros)
 
     # 실패한 요약(None) 필터링
     valid = [

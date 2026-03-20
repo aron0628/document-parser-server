@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     max_chunks_for_raptor: int = 500
     raptor_timeout_seconds: int = 300
     raptor_max_concurrency: int = 10
+    entity_extractor_max_concurrency: int = 3
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

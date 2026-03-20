@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import logging
+import random
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -36,6 +37,7 @@ async def _call_openai(
     messages: list,
     model: str = "gpt-4o",
     timeout: float = 120.0,
+    on_rate_limit=None,
 ) -> Dict[str, Any]:
     """OpenAI Chat API 호출 (retry 포함)"""
     headers = {
@@ -50,8 +52,10 @@ async def _call_openai(
                 response = await client.post(OPENAI_API_URL, headers=headers, json=payload)
 
                 if response.status_code == 429:
-                    wait = INITIAL_BACKOFF * (2 ** attempt)
-                    logger.warning(f"OpenAI rate limit, retrying in {wait}s")
+                    wait = INITIAL_BACKOFF * (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(f"OpenAI rate limit, retrying in {wait:.2f}s")
+                    if on_rate_limit:
+                        await on_rate_limit(wait)
                     await asyncio.sleep(wait)
                     continue
 
@@ -60,15 +64,15 @@ async def _call_openai(
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code >= 500 and attempt < MAX_RETRIES - 1:
-                wait = INITIAL_BACKOFF * (2 ** attempt)
-                logger.warning(f"OpenAI server error, retrying in {wait}s")
+                wait = INITIAL_BACKOFF * (2 ** attempt) + random.uniform(0, 1)
+                logger.warning(f"OpenAI server error, retrying in {wait:.2f}s")
                 await asyncio.sleep(wait)
                 continue
             raise
         except httpx.RequestError as e:
             if attempt < MAX_RETRIES - 1:
-                wait = INITIAL_BACKOFF * (2 ** attempt)
-                logger.warning(f"OpenAI request error: {e}, retrying in {wait}s")
+                wait = INITIAL_BACKOFF * (2 ** attempt) + random.uniform(0, 1)
+                logger.warning(f"OpenAI request error: {e}, retrying in {wait:.2f}s")
                 await asyncio.sleep(wait)
                 continue
             raise
@@ -81,6 +85,7 @@ async def describe_image(
     api_key: str,
     language: str = "Korean",
     context: Optional[str] = None,
+    on_rate_limit=None,
 ) -> str:
     """이미지에 대한 설명 생성 (Vision API)"""
     image_data = Path(image_path).read_bytes()
@@ -107,7 +112,7 @@ async def describe_image(
 
     messages = [{"role": "user", "content": content_blocks}]
 
-    result = await _call_openai(api_key, messages)
+    result = await _call_openai(api_key, messages, on_rate_limit=on_rate_limit)
     return result["choices"][0]["message"]["content"]
 
 
@@ -152,6 +157,7 @@ async def extract_table(
     api_key: str,
     language: str = "Korean",
     image_path: Optional[str] = None,
+    on_rate_limit=None,
 ) -> str:
     """테이블 내용을 구조화된 마크다운 테이블로 변환.
 
@@ -159,5 +165,5 @@ async def extract_table(
     하위 호환: image_path 없이 기존 호출 방식 그대로 사용 가능.
     """
     messages = _build_table_messages(table_content, language, image_path)
-    result = await _call_openai(api_key, messages)
+    result = await _call_openai(api_key, messages, on_rate_limit=on_rate_limit)
     return result["choices"][0]["message"]["content"]

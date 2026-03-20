@@ -1,10 +1,13 @@
 """image_entity_extractor_node: OpenAI Vision으로 이미지 설명 생성"""
 
+import asyncio
 import logging
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
+from app.config import settings
 from app.models.state import PipelineState
 from app.pipeline.external.openai_client import describe_image
+from app.utils.async_utils import create_rate_limit_handler, gather_with_backpressure
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,60 @@ def _build_page_text_map(elements: List[Dict[str, Any]]) -> Dict[int, str]:
     }
 
 
+async def _process_single_image(
+    index: int,
+    page_num: Any,
+    img_elem: Dict[str, Any],
+    image_paths: List[str],
+    api_key: str,
+    language: str,
+    page_text_map: Dict[int, str],
+    job_id: str,
+    total: int,
+    on_rate_limit: Optional[Callable],
+) -> Dict[str, Any]:
+    """단일 이미지에 대해 Vision API로 설명 생성 (병렬 실행 단위)"""
+    page = img_elem.get("page", page_num)
+    pos = img_elem.get("position", 0)
+
+    # 매칭되는 이미지 파일 찾기
+    matching_path = None
+    for path in image_paths:
+        if f"page_{page}_img_{pos}" in path:
+            matching_path = path
+            break
+
+    if matching_path is None:
+        return {
+            "element_id": img_elem.get("id"),
+            "page": page,
+            "description": "",
+            "error": "이미지 파일을 찾을 수 없습니다.",
+        }
+
+    try:
+        page_context = page_text_map.get(page)
+        description = await describe_image(
+            matching_path, api_key, language, context=page_context, on_rate_limit=on_rate_limit
+        )
+        logger.info(
+            f"[{job_id}] 이미지 설명 생성 완료: page={page}, pos={pos}, context={'있음' if page_context else '없음'}"
+        )
+        return {
+            "element_id": img_elem.get("id"),
+            "page": page,
+            "description": description,
+        }
+    except Exception as e:
+        logger.warning(f"[{job_id}] 이미지 설명 생성 실패: {e}")
+        return {
+            "element_id": img_elem.get("id"),
+            "page": page,
+            "description": "",
+            "error": str(e),
+        }
+
+
 async def image_entity_extractor_node(state: PipelineState) -> dict:
     """각 이미지에 대해 OpenAI Vision API로 설명 생성
 
@@ -44,50 +101,26 @@ async def image_entity_extractor_node(state: PipelineState) -> dict:
     elements = state.get("elements", [])
     page_text_map = _build_page_text_map(elements)
 
-    image_entities: List[Dict[str, Any]] = []
-
     # 모든 이미지 요소에 대해 설명 생성
     all_images = []
     for page_num, elems in page_elements.items():
         for img_elem in elems.get("images", []):
             all_images.append((page_num, img_elem))
 
+    semaphore = asyncio.Semaphore(settings.entity_extractor_max_concurrency)
+    pause_event = asyncio.Event()
+    pause_event.set()
+    on_rate_limit = create_rate_limit_handler(pause_event)
+
+    coros = []
     for i, (page_num, img_elem) in enumerate(all_images):
-        # 매칭되는 이미지 파일 찾기
-        matching_path = None
-        page = img_elem.get("page", page_num)
-        pos = img_elem.get("position", 0)
-        for path in image_paths:
-            if f"page_{page}_img_{pos}" in path:
-                matching_path = path
-                break
+        coros.append(_process_single_image(
+            i, page_num, img_elem, image_paths, api_key, language,
+            page_text_map, job_id, len(all_images), on_rate_limit
+        ))
 
-        if matching_path is None:
-            image_entities.append({
-                "element_id": img_elem.get("id"),
-                "page": page,
-                "description": "",
-                "error": "이미지 파일을 찾을 수 없습니다.",
-            })
-            continue
-
-        try:
-            page_context = page_text_map.get(page)
-            description = await describe_image(matching_path, api_key, language, context=page_context)
-            image_entities.append({
-                "element_id": img_elem.get("id"),
-                "page": page,
-                "description": description,
-            })
-            logger.info(f"[{job_id}] 이미지 설명 생성 완료: page={page}, pos={pos}, context={'있음' if page_context else '없음'}")
-        except Exception as e:
-            logger.warning(f"[{job_id}] 이미지 설명 생성 실패: {e}")
-            image_entities.append({
-                "element_id": img_elem.get("id"),
-                "page": page,
-                "description": "",
-                "error": str(e),
-            })
+    image_entities = await gather_with_backpressure(semaphore, coros, pause_event)
+    image_entities = [e for e in image_entities if e is not None]
 
     logger.info(f"[{job_id}] 이미지 엔티티 추출 완료: {len(image_entities)}개")
 
