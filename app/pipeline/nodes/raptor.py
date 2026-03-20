@@ -141,13 +141,25 @@ def _perform_clustering(
     return final_clusters
 
 
+def _sanitize_text(text: str) -> str:
+    """JSON 직렬화를 깨뜨리는 제어 문자 제거 (탭/개행/캐리지리턴 제외)"""
+    return "".join(
+        ch for ch in text
+        if ch in ("\t", "\n", "\r") or (ord(ch) >= 32)
+    )
+
+
 async def _summarize_cluster(
     texts: List[str],
     client: AsyncOpenAI,
     model: str,
+    max_chars: int = 100_000,
 ) -> str:
     """클러스터 텍스트들을 LLM으로 요약"""
-    combined = "\n---\n".join(texts)
+    sanitized = [_sanitize_text(t) for t in texts]
+    combined = "\n---\n".join(sanitized)
+    if len(combined) > max_chars:
+        combined = combined[:max_chars] + "\n... (truncated)"
     response = await client.chat.completions.create(
         model=model,
         messages=[
