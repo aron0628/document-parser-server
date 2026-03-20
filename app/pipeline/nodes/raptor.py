@@ -13,7 +13,7 @@ import traceback
 from typing import Dict, List, Optional
 
 import numpy as np
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, APIConnectionError, RateLimitError, APIStatusError
 from sklearn.mixture import GaussianMixture
 from umap import UMAP
 
@@ -31,9 +31,10 @@ def _global_cluster_embeddings(
     metric: str = "cosine",
 ) -> np.ndarray:
     """UMAP 글로벌 차원 축소"""
+    n_neighbors = min(n_neighbors, len(embeddings) - 1)
     reducer = UMAP(
         n_components=dim,
-        n_neighbors=n_neighbors,
+        n_neighbors=max(n_neighbors, 2),
         metric=metric,
         random_state=42,
     )
@@ -47,9 +48,10 @@ def _local_cluster_embeddings(
     metric: str = "cosine",
 ) -> np.ndarray:
     """UMAP 로컬 차원 축소"""
+    num_neighbors = min(num_neighbors, len(embeddings) - 1)
     reducer = UMAP(
         n_components=dim,
-        n_neighbors=num_neighbors,
+        n_neighbors=max(num_neighbors, 2),
         metric=metric,
         init="random",
         random_state=42,
@@ -159,28 +161,62 @@ def _sanitize_text(text: str) -> str:
     )
 
 
+_MAX_RETRIES = 3
+_INITIAL_BACKOFF = 2.0
+
+
+def _is_retryable(error: Exception) -> bool:
+    """일시적 에러(재시도 가능) 여부 판별"""
+    if isinstance(error, (APIConnectionError, RateLimitError)):
+        return True
+    if isinstance(error, APIStatusError) and error.status_code >= 500:
+        return True
+    return False
+
+
 async def _summarize_cluster(
     texts: List[str],
     client: AsyncOpenAI,
     model: str,
     max_chars: int = 100_000,
-) -> str:
-    """클러스터 텍스트들을 LLM으로 요약"""
+) -> Optional[str]:
+    """클러스터 텍스트들을 LLM으로 요약.
+
+    - 일시적 에러(429, 5xx, 네트워크): 지수 백오프 재시도
+    - 영구적 에러(400 등): 즉시 스킵 (None 반환)
+    """
     sanitized = [_sanitize_text(t) for t in texts]
     combined = "\n---\n".join(sanitized)
     if len(combined) > max_chars:
         combined = combined[:max_chars] + "\n... (truncated)"
-    response = await client.chat.completions.create(
-        model=model,
-        messages=[
-            {
-                "role": "system",
-                "content": "다음 텍스트들의 핵심 내용을 종합하여 하나의 상세한 요약을 작성하세요.",
-            },
-            {"role": "user", "content": combined},
-        ],
-    )
-    return response.choices[0].message.content
+
+    for attempt in range(_MAX_RETRIES):
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "다음 텍스트들의 핵심 내용을 종합하여 하나의 상세한 요약을 작성하세요.",
+                    },
+                    {"role": "user", "content": combined},
+                ],
+            )
+            content = response.choices[0].message.content
+            return content if content else None
+        except Exception as e:
+            if _is_retryable(e) and attempt < _MAX_RETRIES - 1:
+                wait = _INITIAL_BACKOFF * (2 ** attempt)
+                logger.warning(
+                    f"클러스터 요약 일시적 에러 (attempt {attempt + 1}/{_MAX_RETRIES}), "
+                    f"{wait}s 후 재시도: {e}"
+                )
+                await asyncio.sleep(wait)
+                continue
+            # 영구적 에러이거나 재시도 소진
+            logger.warning(f"클러스터 요약 실패 (텍스트 {len(texts)}개): {e}")
+            return None
+    return None
 
 
 async def _embed_texts(
@@ -264,25 +300,48 @@ async def _recursive_raptor(
     if not clusters:
         return []
 
-    # 2. 클러스터별 요약 생성 (동시성 제한 병렬)
+    # 2. 클러스터별 요약 생성 (동시성 제한 병렬, 개별 실패 허용)
     summarize_coros = []
     for cluster_indices in clusters:
         cluster_texts = [texts[i] for i in cluster_indices]
         summarize_coros.append(
             _summarize_cluster(cluster_texts, summarize_client, summarize_model)
         )
-    summaries = await _gather_with_semaphore(semaphore, summarize_coros)
+    raw_summaries = await _gather_with_semaphore(semaphore, summarize_coros)
+
+    # 실패한 요약(None) 필터링
+    valid = [
+        (ci, s) for ci, s in zip(clusters, raw_summaries) if s is not None
+    ]
+    if not valid:
+        logger.warning(f"Level {level}: 모든 클러스터 요약 실패, 재귀 중단")
+        return []
+
+    valid_clusters, valid_summaries = zip(*valid)
+    failed_count = len(clusters) - len(valid)
+    failure_rate = failed_count / len(clusters)
+    if failed_count > 0:
+        logger.warning(
+            f"Level {level}: {failed_count}/{len(clusters)}개 클러스터 요약 실패 "
+            f"({failure_rate:.0%}), {len(valid)}개로 계속 진행"
+        )
+    # 실패율 50% 초과 시 RAPTOR 결과 품질이 무의미하므로 중단
+    if failure_rate > 0.5:
+        logger.error(
+            f"Level {level}: 실패율 {failure_rate:.0%} > 50%, RAPTOR 재귀 중단"
+        )
+        return []
 
     # 3. 요약 텍스트 임베딩 (비동기, 동시성 제한)
     async with semaphore:
         summary_embeddings = await _embed_texts(
-            list(summaries), embed_client, embed_model, batch_size
+            list(valid_summaries), embed_client, embed_model, batch_size
         )
 
     # 4. 현재 레벨 결과 수집
     results: List[Dict] = []
     for cluster_id, (cluster_indices, summary, embedding) in enumerate(
-        zip(clusters, summaries, summary_embeddings)
+        zip(valid_clusters, valid_summaries, summary_embeddings)
     ):
         results.append({
             "level": level,
@@ -291,13 +350,13 @@ async def _recursive_raptor(
             "embedding": embedding,
             "metadata": {
                 "source_count": len(cluster_indices),
-                "source_indices": cluster_indices,
+                "source_indices": list(cluster_indices),
                 "clustering_method": "GMM",
             },
         })
 
     # 5. 다음 레벨 재귀
-    next_texts = list(summaries)
+    next_texts = list(valid_summaries)
     next_embeddings = np.array(summary_embeddings)
     child_results = await _recursive_raptor(
         next_texts,
