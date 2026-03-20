@@ -1,4 +1,4 @@
-<!-- Generated: 2026-03-17 | Updated: 2026-03-17 -->
+<!-- Generated: 2026-03-17 | Updated: 2026-03-20 -->
 
 # document-parser-server
 
@@ -52,6 +52,17 @@ PDF 문서를 파싱하여 레이아웃 분석(Upstage API) → 이미지/테이
          → GET /status/{job_id} (polling)
          → GET /download/{job_id} (ZIP download)
 ```
+
+## Architectural Decisions
+
+| Decision | Rationale | Trade-off |
+|----------|-----------|-----------|
+| 파일 기반 Job 저장소 (JSON) | 단순 설계, DB 의존성 없음 | `update_job()`의 read-modify-write가 비원자적 — 동시 쓰기 시 데이터 유실 가능 |
+| DB 실패 시 graceful degradation | PostgreSQL 없이도 서버 기동 | 임베딩이 무음으로 비활성화됨, 사용자에게 명시적 알림 없음 |
+| 싱글턴 그래프 + per-job 콜백 | 그래프 컴파일 비용 절감, 재사용 | 콜백 기반 상태 추적이 간접적 (tag 매칭 방식) |
+| BackgroundTasks (Celery 미사용) | 단순 배포, 단일 프로세스 | 서버 크래시 시 재시도 불가, job이 "processing" 상태로 잔류 |
+| 병렬 브랜치 키 분리 | LangGraph 상태 병합 충돌 방지 | 공유 키 필요 시 아키텍처 변경 필요 |
+| httpx (Upstage/OpenAI) + openai SDK (임베딩) | 임베딩은 OpenAI 호환 API, Vision은 저수준 제어 필요 | 외부 호출에 두 가지 HTTP 패턴 혼재 |
 
 ## Dependencies
 

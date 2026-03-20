@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-03-17 | Updated: 2026-03-17 -->
+<!-- Generated: 2026-03-17 | Updated: 2026-03-20 -->
 
 # services
 
@@ -19,6 +19,7 @@
 ### Working In This Directory
 - job_manager는 DB가 아닌 파일 기반 JSON 저장소 사용 (간단한 설계)
 - 작업 상태: `pending` → `processing` → `completed` / `failed`
+- ⚠️ `update_job()`은 비원자적 read-modify-write — 동시 호출 시 데이터 유실 가능 (실제로는 PipelineTracker가 주요 동시 작성자)
 - file_manager는 3개 볼륨 경로 관리: `uploads_volume`, `data_volume`, `result_volume`
 - ZIP 파일명 형식: `result/{job_id}_{timestamp}.zip`
 

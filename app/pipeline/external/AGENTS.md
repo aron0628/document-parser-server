@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-03-17 | Updated: 2026-03-17 -->
+<!-- Generated: 2026-03-17 | Updated: 2026-03-20 -->
 
 # external
 
@@ -30,6 +30,11 @@
 1. **텍스트+이미지** (멀티모달): HTML 텍스트 + base64 이미지 → `_TABLE_MULTIMODAL_PROMPT`
 2. **이미지만**: base64 이미지 → `_TABLE_IMAGE_ONLY_PROMPT`
 3. **텍스트만**: HTML 텍스트 → `_TABLE_TEXT_PROMPT`
+
+### Dual HTTP Client Pattern
+- Upstage/OpenAI Vision: `httpx.AsyncClient` 직접 사용 (저수준 제어 — 재시도, 타임아웃, multipart)
+- 임베딩 (`embedding.py`): `openai.AsyncOpenAI` SDK 사용 (OpenAI 호환 API)
+- 두 패턴이 혼재하므로 새 외부 API 추가 시 적합한 패턴 선택 필요
 
 ### Common Patterns
 - `async with httpx.AsyncClient(timeout=...) as client:` — 요청당 클라이언트 생성

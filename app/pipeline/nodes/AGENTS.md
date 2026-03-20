@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-03-17 | Updated: 2026-03-17 -->
+<!-- Generated: 2026-03-17 | Updated: 2026-03-20 -->
 
 # nodes
 
@@ -34,7 +34,7 @@ LangGraph 파이프라인의 16개 노드 구현. 각 노드는 순수 async 함
 | `export_markdown.py` | un-enriched 요소로 Markdown 문서 생성 (페이지별 `## Page N` 구분) |
 | `export_table_csv.py` | un-enriched 테이블 요소를 CSV로 내보내기 (page, table_index, content) |
 | `langchain_document.py` | enriched 요소를 LangChain `Document` 객체로 변환 후 pickle 저장. 이미지는 description, 테이블은 structured_table 사용 |
-| `embedding.py` | pickle에서 Document 로드 → `RecursiveCharacterTextSplitter`로 분할 → Upstage 임베딩 → PostgreSQL `document_embeddings` 테이블에 저장 |
+| `embedding.py` | pickle에서 Document 로드 → `RecursiveCharacterTextSplitter`로 분할 → Upstage 임베딩 → PostgreSQL 저장. **Triple try/except**: API 실패·DB 실패 모두 `embedding_count: 0` 반환 (파이프라인 중단 없음) |
 
 | File | Description |
 |------|-------------|
