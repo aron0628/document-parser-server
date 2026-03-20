@@ -16,19 +16,81 @@ from app.models.state import PipelineState
 logger = logging.getLogger(__name__)
 
 
+def _group_short_elements(
+    documents: List[Document],
+    chunk_size: int,
+) -> List[Document]:
+    """chunk_size//2 미만 element를 같은 page 내 인접끼리 그룹화한다.
+
+    Tier 1 (짧은 element): 같은 page 내 인접 짧은 element를 하나의 Document로 합침
+    Tier 2 (긴 element): 그대로 통과
+    """
+    threshold = chunk_size // 2
+    grouped: List[Document] = []
+    i = 0
+
+    while i < len(documents):
+        doc = documents[i]
+
+        # Tier 2: 긴 element는 그대로 통과
+        if len(doc.page_content) >= threshold:
+            grouped.append(doc)
+            i += 1
+            continue
+
+        # Tier 1: 같은 page 내 인접 짧은 element 수집
+        page = doc.metadata.get("page", 0)
+        group_contents = [doc.page_content]
+        group_element_ids = [doc.metadata.get("element_id")]
+        group_types = {doc.metadata.get("type", "text")}
+        j = i + 1
+
+        while j < len(documents):
+            next_doc = documents[j]
+            if (next_doc.metadata.get("page", 0) != page
+                    or len(next_doc.page_content) >= threshold):
+                break
+            group_contents.append(next_doc.page_content)
+            group_element_ids.append(next_doc.metadata.get("element_id"))
+            group_types.add(next_doc.metadata.get("type", "text"))
+            j += 1
+
+        # "\n" 구분자 사용 ("\n\n" 아님 — RecursiveCharacterTextSplitter가
+        # "\n\n"을 최우선 분할점으로 사용하므로 간섭 방지)
+        merged_content = "\n".join(group_contents)
+        merged_doc = Document(
+            page_content=merged_content,
+            metadata={
+                "source": doc.metadata.get("source"),
+                "page": page,
+                "type": doc.metadata.get("type", "text"),
+                "element_id": doc.metadata.get("element_id"),
+                "grouped_element_ids": group_element_ids,
+                "grouped_types": sorted(group_types),
+                "is_grouped": len(group_contents) > 1,
+            },
+        )
+        grouped.append(merged_doc)
+        i = j
+
+    return grouped
+
+
 def _split_documents(
     documents: List[Document],
     chunk_size: int,
     chunk_overlap: int,
 ) -> List[Document]:
-    """Document 리스트를 RecursiveCharacterTextSplitter로 분할하고 chunk 추적 메타데이터를 추가한다."""
+    """Two-tier 방식: 짧은 element 그룹화 후 split한다."""
+    grouped = _group_short_elements(documents, chunk_size)
+
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
     )
 
     all_chunks: List[Document] = []
-    for parent_idx, doc in enumerate(documents):
+    for parent_idx, doc in enumerate(grouped):
         chunks = splitter.split_documents([doc])
         for chunk_idx, chunk in enumerate(chunks):
             chunk.metadata["parent_element_index"] = parent_idx
@@ -52,12 +114,14 @@ async def embedding_node(state: PipelineState) -> dict:
             logger.info(f"[{job_id}] 임베딩할 Document 없음, 스킵")
             return {"embedding_count": 0}
 
-        # 텍스트 분할
+        # 텍스트 분할 (Two-tier: 짧은 element 그룹화 후 split)
         chunk_size = state.get("chunk_size", settings.chunk_size)
         chunk_overlap = state.get("chunk_overlap", settings.chunk_overlap)
+        grouped = _group_short_elements(documents, chunk_size)
         chunks = _split_documents(documents, chunk_size, chunk_overlap)
         logger.info(
-            f"[{job_id}] 텍스트 분할 완료: {len(documents)}개 Document → {len(chunks)}개 chunk "
+            f"[{job_id}] 텍스트 분할 완료: {len(documents)}개 element → "
+            f"{len(grouped)}개 그룹 → {len(chunks)}개 chunk "
             f"(chunk_size={chunk_size}, chunk_overlap={chunk_overlap})"
         )
 
