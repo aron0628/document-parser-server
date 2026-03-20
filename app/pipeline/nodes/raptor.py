@@ -142,10 +142,20 @@ def _perform_clustering(
 
 
 def _sanitize_text(text: str) -> str:
-    """JSON 직렬화를 깨뜨리는 제어 문자 제거 (탭/개행/캐리지리턴 제외)"""
+    """JSON 직렬화를 깨뜨리는 문자 제거
+
+    - 제어 문자 (탭/개행/캐리지리턴 제외)
+    - 서로게이트 문자 (U+D800~U+DFFF) — PDF 파싱 시 발생하는 깨진 유니코드
+    - 기타 비표준 유니코드 (U+FFFE, U+FFFF)
+    """
+    # 서로게이트 및 깨진 유니코드 제거: UTF-8 왕복 인코딩
+    text = text.encode("utf-8", errors="surrogatepass").decode("utf-8", errors="replace")
     return "".join(
         ch for ch in text
-        if ch in ("\t", "\n", "\r") or (ord(ch) >= 32)
+        if ch in ("\t", "\n", "\r")
+        or (32 <= ord(ch) < 0xD800)
+        or (0xDFFF < ord(ch) < 0xFFFE)
+        or (ord(ch) > 0xFFFF)
     )
 
 
