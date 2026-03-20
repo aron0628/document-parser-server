@@ -116,7 +116,9 @@ def _perform_clustering(
     threshold: float,
 ) -> List[List[int]]:
     """전체 클러스터링 파이프라인: 글로벌 UMAP → 글로벌 GMM → 로컬 UMAP → 로컬 GMM"""
-    if len(embeddings) <= dim:
+    # UMAP spectral layout은 데이터가 적으면 eigsh 에러 발생 (k >= N)
+    min_for_umap = max(dim + 2, 2 * dim)
+    if len(embeddings) <= min_for_umap:
         # 데이터 부족 시 UMAP 스킵, 원본으로 GMM 직접 수행
         return _gmm_cluster(embeddings, threshold=threshold)
 
@@ -127,7 +129,7 @@ def _perform_clustering(
     # 각 글로벌 클러스터 내부에서 로컬 차원 축소 + GMM
     final_clusters: List[List[int]] = []
     for cluster_indices in global_clusters:
-        if len(cluster_indices) <= dim:
+        if len(cluster_indices) <= min_for_umap:
             # 로컬 UMAP 수행 불가, 그대로 유지
             final_clusters.append(cluster_indices)
             continue
