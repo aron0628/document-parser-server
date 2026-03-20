@@ -67,12 +67,29 @@ async def _run_pipeline(job_id: str, pdf_path: str, params: dict) -> None:
         )
     except Exception as e:
         logger.error(f"Pipeline failed for job {job_id}: {e}\n{traceback.format_exc()}")
-        job_manager.update_job(
-            job_id,
-            status="failed",
-            completed_at=time.time(),
-            error=str(e),
-        )
+        try:
+            job_manager.update_job(
+                job_id,
+                status="failed",
+                completed_at=time.time(),
+                error=str(e),
+            )
+        except Exception as update_err:
+            logger.error(f"Failed to update job status for {job_id}: {update_err}")
+            # 재시도: 잠시 대기 후 FD 회수된 뒤 다시 시도
+            await asyncio.sleep(2)
+            try:
+                job_manager.update_job(
+                    job_id,
+                    status="failed",
+                    completed_at=time.time(),
+                    error=str(e),
+                )
+            except Exception:
+                logger.critical(
+                    f"Job {job_id} stuck in processing state - "
+                    f"manual intervention required"
+                )
 
 
 @router.post("/parse", status_code=200)
