@@ -194,6 +194,17 @@ def _run_clustering_sync(
     return _perform_clustering(embeddings, dim, threshold)
 
 
+async def _gather_with_semaphore(
+    semaphore: asyncio.Semaphore,
+    coros: list,
+) -> list:
+    """세마포어로 동시 실행 수를 제한하며 코루틴 리스트를 병렬 실행"""
+    async def _wrap(coro):
+        async with semaphore:
+            return await coro
+    return await asyncio.gather(*[_wrap(c) for c in coros])
+
+
 async def _recursive_raptor(
     texts: List[str],
     embeddings: np.ndarray,
@@ -206,11 +217,16 @@ async def _recursive_raptor(
     summarize_client: AsyncOpenAI,
     summarize_model: str,
     batch_size: int = 100,
+    semaphore: Optional[asyncio.Semaphore] = None,
 ) -> List[Dict]:
     """재귀적 임베딩-클러스터링-요약 루프
 
     CPU 바운드 클러스터링은 asyncio.to_thread로, API 호출은 비동기로 수행한다.
+    동시 API 호출 수는 semaphore로 제한하여 파일 디스크립터 고갈을 방지한다.
     """
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(settings.raptor_max_concurrency)
+
     # 기저 조건
     if level > max_levels:
         return []
@@ -226,19 +242,20 @@ async def _recursive_raptor(
     if not clusters:
         return []
 
-    # 2. 클러스터별 요약 생성 (비동기 병렬)
-    summarize_tasks = []
+    # 2. 클러스터별 요약 생성 (동시성 제한 병렬)
+    summarize_coros = []
     for cluster_indices in clusters:
         cluster_texts = [texts[i] for i in cluster_indices]
-        summarize_tasks.append(
+        summarize_coros.append(
             _summarize_cluster(cluster_texts, summarize_client, summarize_model)
         )
-    summaries = await asyncio.gather(*summarize_tasks)
+    summaries = await _gather_with_semaphore(semaphore, summarize_coros)
 
-    # 3. 요약 텍스트 임베딩 (비동기)
-    summary_embeddings = await _embed_texts(
-        list(summaries), embed_client, embed_model, batch_size
-    )
+    # 3. 요약 텍스트 임베딩 (비동기, 동시성 제한)
+    async with semaphore:
+        summary_embeddings = await _embed_texts(
+            list(summaries), embed_client, embed_model, batch_size
+        )
 
     # 4. 현재 레벨 결과 수집
     results: List[Dict] = []
@@ -272,6 +289,7 @@ async def _recursive_raptor(
         summarize_client,
         summarize_model,
         batch_size,
+        semaphore,
     )
     results.extend(child_results)
 
@@ -330,10 +348,15 @@ async def raptor_node(state: PipelineState) -> dict:
             )
             return {"raptor_level_counts": {}}
 
-        # 텍스트 및 임베딩 분리
+        # 텍스트 및 임베딩 분리 (vector 타입 미등록 커넥션은 문자열로 반환)
         texts = [row[0] for row in rows]
-        embeddings_raw = [row[1] for row in rows]
-        embeddings = np.array(embeddings_raw)
+        embeddings_raw = []
+        for row in rows:
+            emb = row[1]
+            if isinstance(emb, str):
+                emb = json.loads(emb)
+            embeddings_raw.append(emb)
+        embeddings = np.array(embeddings_raw, dtype=np.float32)
 
         # 메모리 추정 (float32 기준)
         embedding_dim = embeddings.shape[1] if embeddings.ndim == 2 else 0
