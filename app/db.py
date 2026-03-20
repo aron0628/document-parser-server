@@ -55,31 +55,16 @@ async def init_db() -> None:
         _pool = None
         return
 
-    # RAPTOR summaries 테이블 생성 (idempotent)
+    # RAPTOR summaries 테이블 존재 확인 (DDL 권한 불필요)
     try:
         async with _pool.connection() as conn:
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS raptor_summaries (
-                    id BIGSERIAL PRIMARY KEY,
-                    job_id VARCHAR(64) NOT NULL,
-                    raptor_level INTEGER NOT NULL,
-                    cluster_id INTEGER NOT NULL,
-                    parent_summary_ids INTEGER[],
-                    content TEXT NOT NULL,
-                    metadata JSONB,
-                    embedding vector
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT 1 FROM raptor_summaries LIMIT 0"
                 )
-            """)
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_raptor_summaries_job_id ON raptor_summaries(job_id)"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_raptor_summaries_level ON raptor_summaries(job_id, raptor_level)"
-            )
-            await conn.commit()
             logger.info("raptor_summaries 테이블 확인 완료")
     except Exception as e:
-        logger.warning(f"raptor_summaries 테이블 생성 실패 (RAPTOR 비활성화): {e}")
+        logger.warning(f"raptor_summaries 테이블 미존재 (RAPTOR 비활성화): {e}")
 
     logger.info("DB 초기화 완료")
 
