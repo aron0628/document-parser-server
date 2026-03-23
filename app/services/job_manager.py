@@ -68,6 +68,15 @@ def update_job(job_id: str, **updates: Any) -> Optional[Dict[str, Any]]:
     return job
 
 
+def delete_job(job_id: str) -> bool:
+    """작업 JSON 파일 삭제. 삭제 성공 시 True, 파일 없으면 False 반환"""
+    path = _job_path(job_id)
+    if not path.exists():
+        return False
+    path.unlink()
+    return True
+
+
 def list_jobs() -> List[Dict[str, Any]]:
     """모든 작업 목록 조회"""
     jobs = []

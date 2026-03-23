@@ -84,8 +84,7 @@ async def test_table_extractor_html_and_valid_image(mock_extract, tmp_path):
 
     state = {
         "job_id": "test-job",
-        "openai_api_key": "test-key",
-        "language": "Korean",
+                "language": "Korean",
         "page_elements": {
             1: {
                 "tables": [
@@ -101,7 +100,8 @@ async def test_table_extractor_html_and_valid_image(mock_extract, tmp_path):
         "app.pipeline.nodes.table_entity_extractor.extract_table",
         new=mock_extract,
     ):
-        result = await table_entity_extractor_node(state)
+        config = {"configurable": {"openai_api_key": "test-key"}}
+        result = await table_entity_extractor_node(state, config)
 
     mock_extract.assert_called_once()
     call_kwargs = mock_extract.call_args
@@ -123,8 +123,7 @@ async def test_table_extractor_fallback_png_treated_as_no_image(mock_extract, tm
 
     state = {
         "job_id": "test-job",
-        "openai_api_key": "test-key",
-        "language": "Korean",
+                "language": "Korean",
         "page_elements": {
             1: {
                 "tables": [
@@ -140,7 +139,8 @@ async def test_table_extractor_fallback_png_treated_as_no_image(mock_extract, tm
         "app.pipeline.nodes.table_entity_extractor.extract_table",
         new=mock_extract,
     ):
-        result = await table_entity_extractor_node(state)
+        config = {"configurable": {"openai_api_key": "test-key"}}
+        result = await table_entity_extractor_node(state, config)
 
     mock_extract.assert_called_once()
     call_kwargs = mock_extract.call_args
@@ -159,8 +159,7 @@ async def test_table_extractor_no_html_with_valid_image(mock_extract, tmp_path):
 
     state = {
         "job_id": "test-job",
-        "openai_api_key": "test-key",
-        "language": "Korean",
+                "language": "Korean",
         "page_elements": {
             1: {
                 "tables": [
@@ -176,7 +175,8 @@ async def test_table_extractor_no_html_with_valid_image(mock_extract, tmp_path):
         "app.pipeline.nodes.table_entity_extractor.extract_table",
         new=mock_extract,
     ):
-        result = await table_entity_extractor_node(state)
+        config = {"configurable": {"openai_api_key": "test-key"}}
+        result = await table_entity_extractor_node(state, config)
 
     mock_extract.assert_called_once()
     call_kwargs = mock_extract.call_args
@@ -198,8 +198,7 @@ async def test_table_extractor_no_html_no_image_returns_error(mock_extract):
 
     state = {
         "job_id": "test-job",
-        "openai_api_key": "test-key",
-        "language": "Korean",
+                "language": "Korean",
         "page_elements": {
             1: {
                 "tables": [
@@ -215,7 +214,8 @@ async def test_table_extractor_no_html_no_image_returns_error(mock_extract):
         "app.pipeline.nodes.table_entity_extractor.extract_table",
         new=mock_extract,
     ):
-        result = await table_entity_extractor_node(state)
+        config = {"configurable": {"openai_api_key": "test-key"}}
+        result = await table_entity_extractor_node(state, config)
 
     mock_extract.assert_not_called()
     assert "error" in result["table_entities"][0], "에러 키가 결과에 포함되어야 함"

@@ -6,6 +6,7 @@ import pickle
 from typing import List
 
 from langchain_core.documents import Document
+from langchain_core.runnables import RunnableConfig
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from openai import AsyncOpenAI
 
@@ -100,7 +101,7 @@ def _split_documents(
     return all_chunks
 
 
-async def embedding_node(state: PipelineState) -> dict:
+async def embedding_node(state: PipelineState, config: RunnableConfig) -> dict:
     """pickle에서 Document 로드 후 텍스트 분할, Upstage 임베딩 생성 및 DB 저장"""
     job_id = state["job_id"]
 
@@ -127,7 +128,7 @@ async def embedding_node(state: PipelineState) -> dict:
 
         # Upstage 임베딩 클라이언트 (OpenAI 호환)
         client = AsyncOpenAI(
-            api_key=state["upstage_api_key"],
+            api_key=config["configurable"]["upstage_api_key"],
             base_url="https://api.upstage.ai/v1",
         )
         embedding_model = state.get("embedding_model", settings.default_embedding_model)

@@ -15,7 +15,11 @@ logger = logging.getLogger(__name__)
 class PipelineRunner(Protocol):
     """파이프라인 실행 프로토콜"""
 
-    async def run(self, state: PipelineState) -> PipelineState:
+    async def run(
+        self,
+        state: PipelineState,
+        configurable: Dict[str, Any] | None = None,
+    ) -> PipelineState:
         ...
 
 
@@ -23,10 +27,15 @@ class LangGraphPipelineRunner:
     """LangGraph 기반 파이프라인 실행기"""
 
     def __init__(self):
-        from app.pipeline.graph import build_graph
-        self._graph = build_graph()
+        from app.pipeline.graph import compile_graph
+        from app.pipeline.checkpointer import get_checkpointer
+        self._graph = compile_graph(checkpointer=get_checkpointer())
 
-    async def run(self, state: PipelineState) -> PipelineState:
+    async def run(
+        self,
+        state: PipelineState,
+        configurable: Dict[str, Any] | None = None,
+    ) -> PipelineState:
         from app.pipeline.logging import LangGraphCallbackTracker, PipelineTracker
 
         job_id = state.get("job_id", "unknown")
@@ -38,13 +47,14 @@ class LangGraphPipelineRunner:
             batch_count = len(state.get("pdf_chunks", []))
             recursion_limit = max(100, batch_count * 3 + 50)
 
-            result = await self._graph.ainvoke(
-                state,
-                config={
-                    "callbacks": [callback],
-                    "recursion_limit": recursion_limit,
-                },
-            )
+            config: Dict[str, Any] = {
+                "callbacks": [callback],
+                "recursion_limit": recursion_limit,
+            }
+            if configurable:
+                config["configurable"] = configurable
+
+            result = await self._graph.ainvoke(state, config=config)
             tracker.pipeline_summary()
             return result
         except Exception:
@@ -87,8 +97,6 @@ async def run_pipeline(job_id: str, pdf_path: str, params: Dict[str, Any]) -> Pi
         "include_image": params["include_image"],
         "batch_size": params["batch_size"],
         "test_page": params.get("test_page"),
-        "upstage_api_key": params["upstage_api_key"],
-        "openai_api_key": params["openai_api_key"],
         "job_id": job_id,
         "pdf_chunks": [],
         "current_batch_index": 0,
@@ -98,6 +106,11 @@ async def run_pipeline(job_id: str, pdf_path: str, params: Dict[str, Any]) -> Pi
         "chunk_overlap": params.get("chunk_overlap", 200),
         "enable_raptor": params.get("enable_raptor", False),
     }
+    configurable = {
+        "thread_id": job_id,
+        "upstage_api_key": params["upstage_api_key"],
+        "openai_api_key": params["openai_api_key"],
+    }
     logger.info(
         f"[{job_id}] 파이프라인 시작 — "
         f"embedding_model={initial_state['embedding_model']}, "
@@ -105,4 +118,4 @@ async def run_pipeline(job_id: str, pdf_path: str, params: Dict[str, Any]) -> Pi
         f"enable_raptor={initial_state['enable_raptor']}"
     )
     runner = get_runner()
-    return await runner.run(initial_state)
+    return await runner.run(initial_state, configurable=configurable)

@@ -27,6 +27,8 @@ class StatusResponse(BaseModel):
     current_phase: Optional[int] = None
     current_node: Optional[str] = None
     progress: Optional[float] = None
+    raptor_status: Optional[str] = None
+    raptor_error: Optional[str] = None
 
 
 class JobSummary(BaseModel):
@@ -39,3 +41,29 @@ class JobSummary(BaseModel):
 
 class JobListResponse(BaseModel):
     jobs: List[JobSummary]
+
+
+class ResumeResponse(BaseModel):
+    """파이프라인 재개 응답"""
+    job_id: str
+    status: str
+    message: str
+
+
+class RaptorRetryResponse(BaseModel):
+    """RAPTOR 재실행 응답"""
+    job_id: str
+    raptor_status: str
+    message: str
+
+
+class DeleteJobResponse(BaseModel):
+    """작업 삭제 응답"""
+    job_id: str
+    job_file_deleted: bool
+    embeddings_deleted: int
+    raptor_summaries_deleted: int
+    checkpoints_deleted: bool
+    result_file_deleted: bool
+    upload_dir_deleted: bool
+    work_dir_deleted: bool

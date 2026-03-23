@@ -35,7 +35,7 @@ from app.pipeline.nodes.raptor import raptor_node
 
 
 def build_graph() -> StateGraph:
-    """파이프라인 그래프 구성 및 컴파일"""
+    """파이프라인 그래프 구성 (compile 미포함)"""
 
     graph = StateGraph(PipelineState)
 
@@ -117,4 +117,10 @@ def build_graph() -> StateGraph:
     graph.add_edge("export_markdown", END)
     graph.add_edge("export_table_csv", END)
 
-    return graph.compile()
+    return graph  # compile() 호출하지 않음
+
+
+def compile_graph(checkpointer=None):
+    """checkpointer를 주입하여 그래프 컴파일"""
+    graph = build_graph()
+    return graph.compile(checkpointer=checkpointer)

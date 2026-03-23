@@ -78,12 +78,20 @@ def _base_state(**overrides):
     state = {
         "job_id": "test-job-123",
         "enable_raptor": True,
-        "upstage_api_key": "test-upstage-key",
-        "openai_api_key": "test-openai-key",
         "embedding_model": "embedding-passage",
     }
     state.update(overrides)
     return state
+
+
+def _base_config(**overrides):
+    """raptor_node 테스트용 기본 config dict"""
+    configurable = {
+        "upstage_api_key": "test-upstage-key",
+        "openai_api_key": "test-openai-key",
+    }
+    configurable.update(overrides)
+    return {"configurable": configurable}
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +193,7 @@ async def test_chunk_count_bounds():
     state = _base_state()
 
     with patch("app.pipeline.nodes.raptor.get_pool", return_value=pool):
-        result = await raptor_node(state)
+        result = await raptor_node(state, _base_config())
 
     assert result == {"raptor_level_counts": {}}
 
@@ -221,7 +229,7 @@ async def test_timeout_enforcement():
          patch("app.pipeline.nodes.raptor.settings", mock_settings), \
          patch("app.pipeline.nodes.raptor.AsyncOpenAI"), \
          patch("app.pipeline.nodes.raptor._recursive_raptor", side_effect=slow_raptor):
-        result = await raptor_node(state)
+        result = await raptor_node(state, _base_config())
 
     assert result == {"raptor_level_counts": {}}
 
@@ -261,7 +269,7 @@ async def test_raptor_node_disabled():
 
     mock_get_pool = MagicMock()
     with patch("app.pipeline.nodes.raptor.get_pool", mock_get_pool):
-        result = await raptor_node(state)
+        result = await raptor_node(state, _base_config())
 
     assert result == {"raptor_level_counts": {}}
     mock_get_pool.assert_not_called()
@@ -310,7 +318,7 @@ async def test_raptor_node_enabled():
          patch("app.pipeline.nodes.raptor.settings", mock_settings), \
          patch("app.pipeline.nodes.raptor.AsyncOpenAI"), \
          patch("app.pipeline.nodes.raptor._recursive_raptor", AsyncMock(return_value=fake_results)):
-        result = await raptor_node(state)
+        result = await raptor_node(state, _base_config())
 
     # 레벨별 카운트 확인
     assert result["raptor_level_counts"] == {1: 2}
@@ -352,7 +360,7 @@ async def test_graceful_degradation():
          patch("app.pipeline.nodes.raptor.settings", mock_settings), \
          patch("app.pipeline.nodes.raptor.AsyncOpenAI"), \
          patch("app.pipeline.nodes.raptor._recursive_raptor", AsyncMock(side_effect=Exception("클러스터링 실패"))):
-        result = await raptor_node(state)
+        result = await raptor_node(state, _base_config())
 
     assert result == {"raptor_level_counts": {}}
 
@@ -392,7 +400,7 @@ async def test_partial_failure_rollback():
          patch("app.pipeline.nodes.raptor.settings", mock_settings), \
          patch("app.pipeline.nodes.raptor.AsyncOpenAI"), \
          patch("app.pipeline.nodes.raptor._recursive_raptor", AsyncMock(return_value=fake_results)):
-        result = await raptor_node(state)
+        result = await raptor_node(state, _base_config())
 
     assert result == {"raptor_level_counts": {}}
 
@@ -432,7 +440,7 @@ async def test_idempotency_rerun():
          patch("app.pipeline.nodes.raptor.settings", mock_settings), \
          patch("app.pipeline.nodes.raptor.AsyncOpenAI"), \
          patch("app.pipeline.nodes.raptor._recursive_raptor", AsyncMock(return_value=fake_results)):
-        result = await raptor_node(state)
+        result = await raptor_node(state, _base_config())
 
     # DELETE가 호출되었는지 확인 (2번째 connection)
     delete_cur = conns[1].cursor.return_value
@@ -461,6 +469,6 @@ async def test_max_chunks_exceeded():
     state = _base_state()
 
     with patch("app.pipeline.nodes.raptor.get_pool", return_value=pool):
-        result = await raptor_node(state)
+        result = await raptor_node(state, _base_config())
 
     assert result == {"raptor_level_counts": {}}

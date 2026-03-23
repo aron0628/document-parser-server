@@ -9,13 +9,17 @@ import asyncio
 import json
 import logging
 import os
+import time
 import traceback
 from typing import Dict, List, Optional
 
 import numpy as np
 from openai import AsyncOpenAI, APIConnectionError, RateLimitError, APIStatusError
+from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 from umap import UMAP
+
+from langchain_core.runnables import RunnableConfig
 
 from app.config import settings
 from app.db import get_pool
@@ -110,12 +114,24 @@ def _gmm_cluster(
     return [c for c in clusters if c]
 
 
+def _pca_reduce(embeddings: np.ndarray, target_dim: int = 50) -> np.ndarray:
+    """UMAP 전 PCA 사전 차원축소 — 고차원 입력의 UMAP 성능 개선"""
+    if embeddings.shape[1] <= target_dim:
+        return embeddings
+    n_components = min(target_dim, embeddings.shape[0], embeddings.shape[1])
+    if n_components >= embeddings.shape[1]:
+        return embeddings
+    pca = PCA(n_components=n_components, random_state=42)
+    return pca.fit_transform(embeddings)
+
+
 def _perform_clustering(
     embeddings: np.ndarray,
     dim: int,
     threshold: float,
 ) -> List[List[int]]:
     """전체 클러스터링 파이프라인: 글로벌 UMAP → 글로벌 GMM → 로컬 UMAP → 로컬 GMM"""
+    embeddings = _pca_reduce(embeddings)
     # UMAP spectral layout은 데이터가 적으면 eigsh 에러 발생 (k >= N)
     min_for_umap = max(dim + 2, 2 * dim)
     if len(embeddings) <= min_for_umap:
@@ -143,6 +159,15 @@ def _perform_clustering(
             original_indices = [cluster_indices[i] for i in local_cluster]
             final_clusters.append(original_indices)
 
+    # 클러스터 수 상한 적용
+    max_clusters = settings.raptor_max_clusters_per_level
+    if len(final_clusters) > max_clusters:
+        final_clusters.sort(key=len, reverse=True)
+        logger.info(
+            f"클러스터 수 {len(final_clusters)} → {max_clusters}개로 제한"
+        )
+        final_clusters = final_clusters[:max_clusters]
+
     return final_clusters
 
 
@@ -150,6 +175,8 @@ def _sanitize_text(text: str) -> str:
     """JSON 직렬화를 깨뜨리는 문자 제거
 
     - 제어 문자 (탭/개행/캐리지리턴 제외)
+    - DEL (U+007F)
+    - C1 제어 문자 (U+0080~U+009F) — PDF의 Windows-1252 인코딩에서 빈번
     - 서로게이트 문자 (U+D800~U+DFFF) — PDF 파싱 시 발생하는 깨진 유니코드
     - 기타 비표준 유니코드 (U+FFFE, U+FFFF)
     """
@@ -158,7 +185,8 @@ def _sanitize_text(text: str) -> str:
     return "".join(
         ch for ch in text
         if ch in ("\t", "\n", "\r")
-        or (32 <= ord(ch) < 0xD800)
+        or (32 <= ord(ch) < 0x7F)
+        or (0x00A0 <= ord(ch) < 0xD800)
         or (0xDFFF < ord(ch) < 0xFFFE)
         or (ord(ch) > 0xFFFF)
     )
@@ -218,6 +246,7 @@ async def _summarize_cluster(
                 continue
             # 영구적 에러이거나 재시도 소진
             logger.warning(f"클러스터 요약 실패 (텍스트 {len(texts)}개): {e}")
+            logger.debug(f"실패 클러스터 텍스트 샘플 (첫 200자): {combined[:200]!r}")
             return None
     return None
 
@@ -268,6 +297,8 @@ async def _recursive_raptor(
     summarize_model: str,
     batch_size: int = 100,
     semaphore: Optional[asyncio.Semaphore] = None,
+    deadline: Optional[float] = None,
+    partial_results: Optional[List[Dict]] = None,
 ) -> List[Dict]:
     """재귀적 임베딩-클러스터링-요약 루프
 
@@ -277,11 +308,19 @@ async def _recursive_raptor(
     if semaphore is None:
         semaphore = asyncio.Semaphore(settings.raptor_max_concurrency)
 
+    if partial_results is None:
+        partial_results = []
+
+    # deadline 초과 시 현재까지 결과로 중단
+    if deadline and time.monotonic() > deadline:
+        logger.warning(f"Level {level}: 시간 예산 소진, 재귀 중단")
+        return partial_results
+
     # 기저 조건
     if level > max_levels:
-        return []
+        return partial_results
     if len(texts) < 3:
-        return []
+        return partial_results
 
     # 1. 클러스터링 (CPU-bound → thread pool)
     embeddings_list = embeddings.tolist()
@@ -290,7 +329,7 @@ async def _recursive_raptor(
     )
 
     if not clusters:
-        return []
+        return partial_results
 
     # 2. 클러스터별 요약 생성 (동시성 제한 병렬, 개별 실패 허용)
     summarize_coros = []
@@ -307,7 +346,7 @@ async def _recursive_raptor(
     ]
     if not valid:
         logger.warning(f"Level {level}: 모든 클러스터 요약 실패, 재귀 중단")
-        return []
+        return partial_results
 
     valid_clusters, valid_summaries = zip(*valid)
     failed_count = len(clusters) - len(valid)
@@ -322,7 +361,7 @@ async def _recursive_raptor(
         logger.error(
             f"Level {level}: 실패율 {failure_rate:.0%} > 50%, RAPTOR 재귀 중단"
         )
-        return []
+        return partial_results
 
     # 3. 요약 텍스트 임베딩 (비동기, 동시성 제한)
     async with semaphore:
@@ -331,11 +370,10 @@ async def _recursive_raptor(
         )
 
     # 4. 현재 레벨 결과 수집
-    results: List[Dict] = []
     for cluster_id, (cluster_indices, summary, embedding) in enumerate(
         zip(valid_clusters, valid_summaries, summary_embeddings)
     ):
-        results.append({
+        partial_results.append({
             "level": level,
             "cluster_id": cluster_id,
             "content": summary,
@@ -350,7 +388,7 @@ async def _recursive_raptor(
     # 5. 다음 레벨 재귀
     next_texts = list(valid_summaries)
     next_embeddings = np.array(summary_embeddings)
-    child_results = await _recursive_raptor(
+    await _recursive_raptor(
         next_texts,
         next_embeddings,
         level + 1,
@@ -363,13 +401,14 @@ async def _recursive_raptor(
         summarize_model,
         batch_size,
         semaphore,
+        deadline,
+        partial_results,
     )
-    results.extend(child_results)
 
-    return results
+    return partial_results
 
 
-async def raptor_node(state: PipelineState) -> dict:
+async def raptor_node(state: PipelineState, config: RunnableConfig) -> dict:
     """RAPTOR 계층적 요약 생성 및 DB 저장
 
     리프 임베딩을 DB에서 읽어 클러스터링 → 요약 → 임베딩을 재귀적으로 수행하고,
@@ -446,11 +485,11 @@ async def raptor_node(state: PipelineState) -> dict:
 
         # API 클라이언트 생성
         embed_client = AsyncOpenAI(
-            api_key=state["upstage_api_key"],
+            api_key=config["configurable"]["upstage_api_key"],
             base_url="https://api.upstage.ai/v1",
         )
         summarize_client = AsyncOpenAI(
-            api_key=state["openai_api_key"],
+            api_key=config["configurable"]["openai_api_key"],
         )
 
         embed_model = state.get("embedding_model", settings.default_embedding_model)
@@ -468,29 +507,22 @@ async def raptor_node(state: PipelineState) -> dict:
         except Exception as e:
             logger.warning(f"[{job_id}] RAPTOR: 기존 결과 삭제 실패 (계속 진행): {e}")
 
-        # 재귀적 RAPTOR 실행 (타임아웃 적용)
-        try:
-            results = await asyncio.wait_for(
-                _recursive_raptor(
-                    texts=texts,
-                    embeddings=embeddings,
-                    level=1,
-                    max_levels=settings.raptor_max_levels,
-                    dim=settings.raptor_cluster_dim,
-                    threshold=settings.raptor_cluster_threshold,
-                    embed_client=embed_client,
-                    embed_model=embed_model,
-                    summarize_client=summarize_client,
-                    summarize_model=summarize_model,
-                    batch_size=settings.embedding_batch_size,
-                ),
-                timeout=settings.raptor_timeout_seconds,
-            )
-        except asyncio.TimeoutError:
-            logger.error(
-                f"[{job_id}] RAPTOR: 타임아웃 ({settings.raptor_timeout_seconds}초 초과)"
-            )
-            return {"raptor_level_counts": {}}
+        # 재귀적 RAPTOR 실행 (deadline 기반 시간 제한)
+        deadline = time.monotonic() + settings.raptor_timeout_seconds
+        results = await _recursive_raptor(
+            texts=texts,
+            embeddings=embeddings,
+            level=1,
+            max_levels=settings.raptor_max_levels,
+            dim=settings.raptor_cluster_dim,
+            threshold=settings.raptor_cluster_threshold,
+            embed_client=embed_client,
+            embed_model=embed_model,
+            summarize_client=summarize_client,
+            summarize_model=summarize_model,
+            batch_size=settings.embedding_batch_size,
+            deadline=deadline,
+        )
 
         if not results:
             logger.info(f"[{job_id}] RAPTOR: 생성된 요약 없음")

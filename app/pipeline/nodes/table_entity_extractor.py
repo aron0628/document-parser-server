@@ -5,6 +5,8 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from langchain_core.runnables import RunnableConfig
+
 from app.config import settings
 from app.models.state import PipelineState
 from app.pipeline.external.openai_client import extract_table
@@ -68,13 +70,13 @@ async def _process_single_table(
         }
 
 
-async def table_entity_extractor_node(state: PipelineState) -> dict:
+async def table_entity_extractor_node(state: PipelineState, config: RunnableConfig) -> dict:
     """각 테이블에 대해 OpenAI API로 구조화된 데이터 추출
 
     table_entities 키에만 기록 (병렬 브랜치 키 분리)
     """
     job_id = state["job_id"]
-    api_key = state["openai_api_key"]
+    api_key = config["configurable"]["openai_api_key"]
     language = state.get("language", "Korean")
     page_elements = state.get("page_elements", {})
     image_paths = state.get("image_paths", [])

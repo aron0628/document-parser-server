@@ -289,12 +289,12 @@ async def test_embedding_node_success(tmp_path):
     state = {
         "job_id": "test-job-success",
         "pkl_path": str(pkl_file),
-        "upstage_api_key": "test-key",
     }
+    config = {"configurable": {"upstage_api_key": "test-key"}}
 
     with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client), \
          patch("app.pipeline.nodes.embedding.get_pool", return_value=mock_pool):
-        result = await embedding_node(state)
+        result = await embedding_node(state, config)
 
     # 짧은 텍스트이므로 chunk 수 = Document 수
     assert result["embedding_count"] == 2
@@ -353,14 +353,14 @@ async def test_embedding_node_with_splitting(tmp_path):
     state = {
         "job_id": "test-job-split",
         "pkl_path": str(pkl_file),
-        "upstage_api_key": "test-key",
         "chunk_size": 500,
         "chunk_overlap": 100,
     }
+    config = {"configurable": {"upstage_api_key": "test-key"}}
 
     with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client), \
          patch("app.pipeline.nodes.embedding.get_pool", return_value=mock_pool):
-        result = await embedding_node(state)
+        result = await embedding_node(state, config)
 
     # 1500자 텍스트 → chunk_size=500이므로 여러 chunk로 분할
     assert result["embedding_count"] > 1
@@ -383,10 +383,10 @@ async def test_embedding_node_empty_documents(tmp_path):
     state = {
         "job_id": "test-job-empty",
         "pkl_path": str(pkl_file),
-        "upstage_api_key": "test-key",
     }
+    config = {"configurable": {"upstage_api_key": "test-key"}}
 
-    result = await embedding_node(state)
+    result = await embedding_node(state, config)
     assert result["embedding_count"] == 0
 
 
@@ -408,11 +408,11 @@ async def test_embedding_node_api_error(tmp_path):
     state = {
         "job_id": "test-job-api-error",
         "pkl_path": str(pkl_file),
-        "upstage_api_key": "test-key",
     }
+    config = {"configurable": {"upstage_api_key": "test-key"}}
 
     with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client):
-        result = await embedding_node(state)
+        result = await embedding_node(state, config)
 
     assert result["embedding_count"] == 0
 
@@ -443,12 +443,12 @@ async def test_embedding_node_db_error(tmp_path):
     state = {
         "job_id": "test-job-db-error",
         "pkl_path": str(pkl_file),
-        "upstage_api_key": "test-key",
     }
+    config = {"configurable": {"upstage_api_key": "test-key"}}
 
     with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client), \
          patch("app.pipeline.nodes.embedding.get_pool", return_value=mock_pool):
-        result = await embedding_node(state)
+        result = await embedding_node(state, config)
 
     assert result["embedding_count"] == 0
 
@@ -499,12 +499,12 @@ async def test_embedding_node_batch_split(tmp_path):
     state = {
         "job_id": "test-job-batch",
         "pkl_path": str(pkl_file),
-        "upstage_api_key": "test-key",
     }
+    config = {"configurable": {"upstage_api_key": "test-key"}}
 
     with patch("app.pipeline.nodes.embedding.AsyncOpenAI", return_value=mock_client), \
          patch("app.pipeline.nodes.embedding.get_pool", return_value=mock_pool):
-        result = await embedding_node(state)
+        result = await embedding_node(state, config)
 
     # 짧은 텍스트이므로 splitting 후에도 150개 chunk
     assert result["embedding_count"] == 150
@@ -519,10 +519,10 @@ async def test_embedding_node_batch_split(tmp_path):
 
 
 def test_build_graph():
-    """build_graph() 컴파일 성공 (노드/엣지 정상)"""
-    from app.pipeline.graph import build_graph
+    """compile_graph() 컴파일 성공 (노드/엣지 정상)"""
+    from app.pipeline.graph import compile_graph
 
-    compiled = build_graph()
+    compiled = compile_graph()
     assert compiled is not None
 
     # 핵심 노드 존재 확인
@@ -533,9 +533,9 @@ def test_build_graph():
 
 def test_graph_langchain_to_embedding():
     """langchain_document → embedding 직접 연결 확인"""
-    from app.pipeline.graph import build_graph
+    from app.pipeline.graph import compile_graph
 
-    compiled = build_graph()
+    compiled = compile_graph()
     graph_def = compiled.get_graph()
 
     edges = list(graph_def.edges)

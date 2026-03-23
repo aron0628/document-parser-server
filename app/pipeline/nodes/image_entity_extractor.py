@@ -4,6 +4,8 @@ import asyncio
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
+from langchain_core.runnables import RunnableConfig
+
 from app.config import settings
 from app.models.state import PipelineState
 from app.pipeline.external.openai_client import describe_image
@@ -88,13 +90,13 @@ async def _process_single_image(
         }
 
 
-async def image_entity_extractor_node(state: PipelineState) -> dict:
+async def image_entity_extractor_node(state: PipelineState, config: RunnableConfig) -> dict:
     """각 이미지에 대해 OpenAI Vision API로 설명 생성
 
     image_entities 키에만 기록 (병렬 브랜치 키 분리)
     """
     job_id = state["job_id"]
-    api_key = state["openai_api_key"]
+    api_key = config["configurable"]["openai_api_key"]
     language = state.get("language", "Korean")
     image_paths = state.get("image_paths", [])
     page_elements = state.get("page_elements", {})

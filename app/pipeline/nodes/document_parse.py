@@ -2,13 +2,15 @@
 
 import logging
 
+from langchain_core.runnables import RunnableConfig
+
 from app.models.state import PipelineState
 from app.pipeline.external.upstage_client import parse_document
 
 logger = logging.getLogger(__name__)
 
 
-async def document_parse_node(state: PipelineState) -> dict:
+async def document_parse_node(state: PipelineState, config: RunnableConfig) -> dict:
     """현재 배치의 PDF 청크를 Upstage API로 파싱"""
     job_id = state["job_id"]
     current_idx = state.get("current_batch_index", 0)
@@ -18,7 +20,7 @@ async def document_parse_node(state: PipelineState) -> dict:
         return {}
 
     chunk_path = chunks[current_idx]
-    api_key = state["upstage_api_key"]
+    api_key = config["configurable"]["upstage_api_key"]
 
     logger.info(f"[{job_id}] 배치 {current_idx+1}/{len(chunks)} 파싱 중: {chunk_path}")
 
