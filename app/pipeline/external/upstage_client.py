@@ -19,7 +19,7 @@ DEFAULT_PARAMS = {
     "mode": "standard",
     "output_formats": "['markdown', 'html', 'text']",
     "ocr": "auto",
-    "merge_multipage_tables": "true",
+    "merge_multipage_tables": "false",
     "coordinates": "true",
     "base64_encoding": "['figure', 'table']",
 }
