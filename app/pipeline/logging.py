@@ -22,6 +22,7 @@ PIPELINE_NODES: list[tuple[str, int, str]] = [
     ("post_document_parse", 1, "파싱 결과 병합"),
     # Phase 2
     ("create_elements", 2, "요소 생성"),
+    ("keyword_preprocess", 2, "키워드 전처리"),
     ("export_image", 2, "이미지 내보내기"),
     ("page_elements_extractor", 2, "페이지 요소 추출"),
     ("image_entity_extractor", 2, "이미지 엔티티 추출 (OpenAI)"),

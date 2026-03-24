@@ -168,6 +168,7 @@ async def parse_pdf(
     chunk_size: Optional[str] = Form(None),
     chunk_overlap: Optional[str] = Form(None),
     enable_raptor: Optional[str] = Form(None),
+    enable_keyword_extraction: bool = Form(default=True),
     x_upstage_api_key: Optional[str] = Header(None, alias="X-UPSTAGE-API-KEY"),
     x_openai_api_key: Optional[str] = Header(None, alias="X-OPENAI-API-KEY"),
 ) -> ParseResponse:
@@ -195,6 +196,7 @@ async def parse_pdf(
         "chunk_size": int(chunk_size) if chunk_size is not None else settings.chunk_size,
         "chunk_overlap": int(chunk_overlap) if chunk_overlap is not None else settings.chunk_overlap,
         "enable_raptor": enable_raptor.lower() == "true" if enable_raptor is not None else settings.enable_raptor,
+        "enable_keyword_extraction": enable_keyword_extraction,
         "upstage_api_key": upstage_key,
         "openai_api_key": openai_key,
     }
@@ -474,14 +476,28 @@ async def delete_job(job_id: str) -> DeleteJobResponse:
     except Exception as e:
         logger.warning(f"[{job_id}] raptor_summaries 삭제 실패 (계속 진행): {e}")
 
-    # 3. Checkpoint 삭제
+    # 3. DB: document_keywords 삭제
+    try:
+        pool = get_pool()
+        if pool:
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "DELETE FROM document_keywords WHERE job_id = %s",
+                        (job_id,),
+                    )
+                await conn.commit()
+    except Exception as e:
+        logger.warning(f"[{job_id}] document_keywords 삭제 실패 (계속 진행): {e}")
+
+    # 4. Checkpoint 삭제
     try:
         await cleanup_job_checkpoints(job_id)
         checkpoints_deleted = True
     except Exception as e:
         logger.warning(f"[{job_id}] checkpoint 삭제 실패 (계속 진행): {e}")
 
-    # 4. 결과 ZIP 파일 삭제
+    # 5. 결과 ZIP 파일 삭제
     job = job_manager.get_job(job_id)
     if job:
         zip_filename = job.get("zip_filename")
@@ -494,7 +510,7 @@ async def delete_job(job_id: str) -> DeleteJobResponse:
                 except Exception as e:
                     logger.warning(f"[{job_id}] ZIP 파일 삭제 실패 (계속 진행): {e}")
 
-    # 5. 업로드 디렉토리 삭제 ({uploads_volume}/{job_id}/)
+    # 6. 업로드 디렉토리 삭제 ({uploads_volume}/{job_id}/)
     upload_dir = file_manager.get_upload_dir(job_id)
     if upload_dir.exists():
         try:
@@ -503,7 +519,7 @@ async def delete_job(job_id: str) -> DeleteJobResponse:
         except Exception as e:
             logger.warning(f"[{job_id}] 업로드 디렉토리 삭제 실패 (계속 진행): {e}")
 
-    # 6. 작업 중간 파일 디렉토리 삭제 ({data_volume}/{job_id}/)
+    # 7. 작업 중간 파일 디렉토리 삭제 ({data_volume}/{job_id}/)
     work_dir = file_manager.get_work_dir(job_id)
     if work_dir.exists():
         try:
@@ -512,7 +528,7 @@ async def delete_job(job_id: str) -> DeleteJobResponse:
         except Exception as e:
             logger.warning(f"[{job_id}] 작업 디렉토리 삭제 실패 (계속 진행): {e}")
 
-    # 7. 작업 JSON 파일 삭제
+    # 8. 작업 JSON 파일 삭제
     job_file_deleted = job_manager.delete_job(job_id)
 
     logger.info(

@@ -27,6 +27,8 @@ class PipelineState(TypedDict, total=False):
 
     # Phase 2: Element Processing
     elements: List[Dict[str, Any]]              # 기본 요소 객체 (type, content, page, position)
+    keyword_count: Optional[int]                # 키워드 추출된 요소 수
+    enable_keyword_extraction: bool             # Per-request 키워드 추출 활성화 플래그
     image_paths: List[str]                      # 내보낸 이미지 파일 경로
     page_elements: Dict[int, Dict[str, List]]   # {page_num: {images: [], tables: []}}
     image_entities: List[Dict[str, Any]]        # OpenAI Vision 이미지 설명

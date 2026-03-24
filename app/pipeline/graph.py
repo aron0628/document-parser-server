@@ -18,6 +18,7 @@ from app.pipeline.nodes.post_document_parse import post_document_parse_node
 
 # Phase 2 nodes
 from app.pipeline.nodes.create_elements import create_elements_node
+from app.pipeline.nodes.keyword_preprocess import keyword_preprocess_node
 from app.pipeline.nodes.export_image import export_image_node
 from app.pipeline.nodes.page_elements_extractor import page_elements_extractor_node
 from app.pipeline.nodes.image_entity_extractor import image_entity_extractor_node
@@ -61,6 +62,7 @@ def build_graph() -> StateGraph:
     # ── Phase 2: Element Processing ──
 
     graph.add_node("create_elements", create_elements_node)
+    graph.add_node("keyword_preprocess", keyword_preprocess_node)
     graph.add_node("export_image", export_image_node)
     graph.add_node("page_elements_extractor", page_elements_extractor_node)
     graph.add_node("image_entity_extractor", image_entity_extractor_node)
@@ -69,7 +71,8 @@ def build_graph() -> StateGraph:
     graph.add_node("reconstruct_elements", reconstruct_elements_node)
 
     graph.add_edge("post_document_parse", "create_elements")
-    graph.add_edge("create_elements", "export_image")
+    graph.add_edge("create_elements", "keyword_preprocess")
+    graph.add_edge("keyword_preprocess", "export_image")
 
     # export_image에서 4갈래 분기 (parallel fan-out)
     # Branch A: Entity extraction path (enriched → PKL)

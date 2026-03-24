@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     raptor_max_clusters_per_level: int = 50
     entity_extractor_max_concurrency: int = 3
 
+    # Keyword extraction
+    enable_keyword_extraction: bool = True
+    kiwi_num_workers: int = 1
+    keyword_pos_whitelist: list[str] = ["NNG", "NNP", "SL", "SH"]
+    keyword_min_length: int = 2
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
