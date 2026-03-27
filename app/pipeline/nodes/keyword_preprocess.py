@@ -6,7 +6,7 @@ from collections import Counter
 from pathlib import Path
 
 from app.config import settings
-from app.db import get_pool
+from app.db import get_app_setting_bool, get_pool
 from app.models.state import PipelineState
 
 logger = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ async def keyword_preprocess_node(state: PipelineState) -> dict:
     """
     job_id = state["job_id"]
 
-    if not state.get("enable_keyword_extraction", settings.enable_keyword_extraction):
+    if not state.get("enable_keyword_extraction", get_app_setting_bool("enable_keyword_extraction", default=True)):
         logger.info(f"[{job_id}] 키워드 추출 비활성화, 스킵")
         return {"keyword_count": 0}
 

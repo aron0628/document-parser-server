@@ -22,7 +22,7 @@ from umap import UMAP
 from langchain_core.runnables import RunnableConfig
 
 from app.config import settings
-from app.db import get_pool
+from app.db import get_app_setting_int, get_pool
 from app.models.state import PipelineState
 from app.utils.async_utils import gather_with_semaphore
 
@@ -453,10 +453,10 @@ async def raptor_node(state: PipelineState, config: RunnableConfig) -> dict:
             )
             return {"raptor_level_counts": {}}
 
-        if chunk_count > settings.max_chunks_for_raptor:
+        if chunk_count > get_app_setting_int("max_chunks_for_raptor", default=2000):
             logger.info(
                 f"[{job_id}] RAPTOR: 청크 수({chunk_count})가 "
-                f"최대 한도({settings.max_chunks_for_raptor}) 초과, 스킵"
+                f"최대 한도({get_app_setting_int('max_chunks_for_raptor', default=2000)}) 초과, 스킵"
             )
             return {"raptor_level_counts": {}}
 

@@ -126,3 +126,11 @@ def get_app_setting_int(key: str, default: int = 0) -> int:
         return int(val)
     except ValueError:
         return default
+
+
+def get_app_setting_bool(key: str, default: bool = False) -> bool:
+    """캐시된 app_settings 값을 bool로 반환."""
+    val = _app_settings_cache.get(key)
+    if val is None:
+        return default
+    return val.lower() == "true"

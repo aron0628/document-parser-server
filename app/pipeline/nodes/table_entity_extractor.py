@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List, Optional
 from langchain_core.runnables import RunnableConfig
 
 from app.config import settings
+from app.db import get_app_setting_int
 from app.models.state import PipelineState
 from app.pipeline.external.openai_client import extract_table
 from app.pipeline.nodes.export_image import _FALLBACK_PNG
@@ -87,7 +88,7 @@ async def table_entity_extractor_node(state: PipelineState, config: RunnableConf
         for tbl_elem in elems.get("tables", []):
             all_tables.append((page_num, tbl_elem))
 
-    semaphore = asyncio.Semaphore(settings.entity_extractor_max_concurrency)
+    semaphore = asyncio.Semaphore(get_app_setting_int("entity_extractor_max_concurrency", default=3))
     pause_event = asyncio.Event()
     pause_event.set()
     on_rate_limit = create_rate_limit_handler(pause_event)

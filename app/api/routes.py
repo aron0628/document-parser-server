@@ -11,6 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPExceptio
 from fastapi.responses import FileResponse
 
 from app.config import settings
+from app.db import get_app_setting_bool
 from app.models.schemas import (
     DeleteJobResponse,
     HealthResponse,
@@ -197,7 +198,7 @@ async def parse_pdf(
         "embedding_model": embedding_model or settings.default_embedding_model,
         "chunk_size": int(chunk_size) if chunk_size is not None else settings.chunk_size,
         "chunk_overlap": int(chunk_overlap) if chunk_overlap is not None else settings.chunk_overlap,
-        "enable_raptor": enable_raptor.lower() == "true" if enable_raptor is not None else settings.enable_raptor,
+        "enable_raptor": enable_raptor.lower() == "true" if enable_raptor is not None else get_app_setting_bool("enable_raptor", default=True),
         "enable_keyword_extraction": enable_keyword_extraction,
         "upstage_api_key": upstage_key,
         "openai_api_key": openai_key,

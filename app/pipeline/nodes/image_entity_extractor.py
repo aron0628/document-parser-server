@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 from langchain_core.runnables import RunnableConfig
 
 from app.config import settings
+from app.db import get_app_setting_int
 from app.models.state import PipelineState
 from app.pipeline.external.openai_client import describe_image
 from app.utils.async_utils import create_rate_limit_handler, gather_with_backpressure
@@ -109,7 +110,7 @@ async def image_entity_extractor_node(state: PipelineState, config: RunnableConf
         for img_elem in elems.get("images", []):
             all_images.append((page_num, img_elem))
 
-    semaphore = asyncio.Semaphore(settings.entity_extractor_max_concurrency)
+    semaphore = asyncio.Semaphore(get_app_setting_int("entity_extractor_max_concurrency", default=3))
     pause_event = asyncio.Event()
     pause_event.set()
     on_rate_limit = create_rate_limit_handler(pause_event)
