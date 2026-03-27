@@ -158,7 +158,6 @@ document-parser parse document.pdf --wait --download
 | `UPSTAGE_API_KEY` | O | - | Upstage API 키 (레이아웃 분석 + 임베딩) |
 | `OPENAI_API_KEY` | O | - | OpenAI API 키 (이미지/테이블 엔티티 추출) |
 | `PORT` | X | `9997` | 서버 포트 |
-| `MAX_UPLOAD_SIZE_MB` | X | `100` | 최대 업로드 크기(MB) |
 | `DB_HOST` | X | `localhost` | PostgreSQL 호스트 |
 | `DB_PORT` | X | `5432` | PostgreSQL 포트 |
 | `DB_NAME` | X | `document_parser` | 데이터베이스명 |

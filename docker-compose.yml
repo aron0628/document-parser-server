@@ -20,7 +20,6 @@ services:
       - TZ=Asia/Seoul
       - PORT=${PORT:-9997}
       - RUN_MODE=api
-      - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-100}
       - DB_HOST=${DB_HOST:-db}
       - DB_PORT=${DB_PORT:-5432}
       - DB_NAME=${DB_NAME:-document_parser}

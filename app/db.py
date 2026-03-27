@@ -84,3 +84,45 @@ async def close_pool() -> None:
         await _pool.close()
         _pool = None
         logger.info("커넥션 풀 종료 완료")
+
+
+# ---------------------------------------------------------------------------
+# app_settings 테이블 공유 설정 조회
+# ---------------------------------------------------------------------------
+_app_settings_cache: dict[str, str] = {}
+
+
+async def load_app_settings() -> None:
+    """app_settings 테이블에서 설정을 로드하여 캐시."""
+    global _app_settings_cache
+
+    if _pool is None:
+        logger.warning("load_app_settings: DB 풀 없음, 기본값 사용")
+        return
+
+    try:
+        async with _pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT key, value FROM app_settings")
+                rows = await cur.fetchall()
+                _app_settings_cache = {row[0]: row[1] for row in rows}
+        logger.info(f"app_settings 로드 완료 ({len(_app_settings_cache)}건)")
+    except Exception as e:
+        logger.warning(f"app_settings 로드 실패 (기본값 사용): {e}")
+        _app_settings_cache = {}
+
+
+def get_app_setting(key: str, default: str = "") -> str:
+    """캐시된 app_settings 값 반환."""
+    return _app_settings_cache.get(key, default)
+
+
+def get_app_setting_int(key: str, default: int = 0) -> int:
+    """캐시된 app_settings 값을 int로 반환."""
+    val = _app_settings_cache.get(key)
+    if val is None:
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        return default

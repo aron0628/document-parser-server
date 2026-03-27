@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
 from app.config import settings
-from app.db import close_pool, init_db
+from app.db import close_pool, init_db, load_app_settings
 from app.pipeline.checkpointer import close_checkpointer, init_checkpointer
 from app.logging_config import setup_logging
 
@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
         dir_path.mkdir(parents=True, exist_ok=True)
 
     await init_db()
+    await load_app_settings()
     await init_checkpointer()
 
     yield

@@ -180,11 +180,13 @@ async def parse_pdf(
     if not upstage_key or not openai_key:
         raise HTTPException(status_code=400, detail="UPSTAGE API 키와 OpenAI API 키가 필요합니다.")
 
-    # 파일 크기 확인
+    # 파일 크기 확인 (app_settings 테이블에서 관리)
+    from app.db import get_app_setting_int
     content = await file.read()
-    max_size = settings.max_upload_size_mb * 1024 * 1024
+    max_upload_mb = get_app_setting_int("max_upload_size_mb", default=100)
+    max_size = max_upload_mb * 1024 * 1024
     if len(content) > max_size:
-        raise HTTPException(status_code=413, detail=f"파일 크기가 {settings.max_upload_size_mb}MB를 초과합니다.")
+        raise HTTPException(status_code=413, detail=f"파일 크기가 {max_upload_mb}MB를 초과합니다.")
 
     # 파라미터 변환 (string → typed, routes.py가 담당)
     params = {
