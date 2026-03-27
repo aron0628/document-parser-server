@@ -11,7 +11,8 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPExceptio
 from fastapi.responses import FileResponse
 
 from app.config import settings
-from app.db import get_app_setting_bool
+from app.db import get_app_setting, get_app_setting_bool
+from app.pipeline.external.llm_provider import ALLOWED_TEXT_MODELS, ALLOWED_VISION_MODELS, validate_model
 from app.models.schemas import (
     DeleteJobResponse,
     HealthResponse,
@@ -131,6 +132,11 @@ async def _resume_pipeline(job_id: str, api_keys: dict) -> None:
                 "thread_id": job_id,
                 "upstage_api_key": api_keys["upstage_api_key"],
                 "openai_api_key": api_keys["openai_api_key"],
+                # 멀티 프로바이더 키 및 모델 설정
+                "google_api_key": api_keys.get("google_api_key", ""),
+                "xai_api_key": api_keys.get("xai_api_key", ""),
+                "vision_model": api_keys.get("vision_model", settings.vision_model),
+                "raptor_summarization_model": api_keys.get("raptor_summarization_model", settings.raptor_summarization_model),
             },
         }
 
@@ -172,11 +178,15 @@ async def parse_pdf(
     enable_keyword_extraction: bool = Form(default=True),
     x_upstage_api_key: Optional[str] = Header(None, alias="X-UPSTAGE-API-KEY"),
     x_openai_api_key: Optional[str] = Header(None, alias="X-OPENAI-API-KEY"),
+    x_google_api_key: Optional[str] = Header(None, alias="X-GOOGLE-API-KEY"),
+    x_xai_api_key: Optional[str] = Header(None, alias="X-XAI-API-KEY"),
 ) -> ParseResponse:
     """PDF 파일 업로드 및 파싱 작업 요청"""
     # API 키 확인 (헤더 우선, 환경 변수 fallback)
     upstage_key = x_upstage_api_key or settings.upstage_api_key
     openai_key = x_openai_api_key or settings.openai_api_key
+    google_key = x_google_api_key or settings.google_api_key
+    xai_key = x_xai_api_key or settings.xai_api_key
 
     if not upstage_key or not openai_key:
         raise HTTPException(status_code=400, detail="UPSTAGE API 키와 OpenAI API 키가 필요합니다.")
@@ -188,6 +198,17 @@ async def parse_pdf(
     max_size = max_upload_mb * 1024 * 1024
     if len(content) > max_size:
         raise HTTPException(status_code=413, detail=f"파일 크기가 {max_upload_mb}MB를 초과합니다.")
+
+    # DB에서 모델 설정 조회 (app_settings 우선, 환경 변수 fallback)
+    vision_model = get_app_setting("vision_model", settings.vision_model)
+    raptor_model = get_app_setting("raptor_summarization_model", settings.raptor_summarization_model)
+
+    # 모델 유효성 검증 (허용 목록에 없으면 400 에러)
+    try:
+        validate_model(vision_model, ALLOWED_VISION_MODELS)
+        validate_model(raptor_model, ALLOWED_TEXT_MODELS)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # 파라미터 변환 (string → typed, routes.py가 담당)
     params = {
@@ -208,6 +229,11 @@ async def parse_pdf(
     api_keys = {
         "upstage_api_key": params.pop("upstage_api_key"),
         "openai_api_key": params.pop("openai_api_key"),
+        # 멀티 프로바이더 키 및 모델 설정
+        "google_api_key": google_key,
+        "xai_api_key": xai_key,
+        "vision_model": vision_model,
+        "raptor_summarization_model": raptor_model,
     }
 
     # 작업 생성
@@ -299,6 +325,8 @@ async def resume_pipeline(
     job_id: str,
     x_upstage_api_key: Optional[str] = Header(None, alias="X-UPSTAGE-API-KEY"),
     x_openai_api_key: Optional[str] = Header(None, alias="X-OPENAI-API-KEY"),
+    x_google_api_key: Optional[str] = Header(None, alias="X-GOOGLE-API-KEY"),
+    x_xai_api_key: Optional[str] = Header(None, alias="X-XAI-API-KEY"),
 ) -> ResumeResponse:
     """실패한 작업을 마지막 checkpoint에서 재개"""
     from app.pipeline.checkpointer import get_checkpointer
@@ -318,8 +346,19 @@ async def resume_pipeline(
     # 3. API 키 확보
     upstage_key = x_upstage_api_key or settings.upstage_api_key
     openai_key = x_openai_api_key or settings.openai_api_key
+    google_key = x_google_api_key or settings.google_api_key
+    xai_key = x_xai_api_key or settings.xai_api_key
     if not upstage_key or not openai_key:
         raise HTTPException(status_code=400, detail="UPSTAGE API 키와 OpenAI API 키가 필요합니다.")
+
+    # DB에서 모델 설정 조회 + 유효성 검증
+    vision_model = get_app_setting("vision_model", settings.vision_model)
+    raptor_model = get_app_setting("raptor_summarization_model", settings.raptor_summarization_model)
+    try:
+        validate_model(vision_model, ALLOWED_VISION_MODELS)
+        validate_model(raptor_model, ALLOWED_TEXT_MODELS)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # 4. checkpoint 존재 확인
     from app.pipeline.runner import get_runner
@@ -339,7 +378,15 @@ async def resume_pipeline(
         raise HTTPException(status_code=503, detail=f"Checkpoint 조회 실패: {e}")
 
     # 5. 백그라운드 재개
-    api_keys = {"upstage_api_key": upstage_key, "openai_api_key": openai_key}
+    api_keys = {
+        "upstage_api_key": upstage_key,
+        "openai_api_key": openai_key,
+        # 멀티 프로바이더 키 및 모델 설정
+        "google_api_key": google_key,
+        "xai_api_key": xai_key,
+        "vision_model": vision_model,
+        "raptor_summarization_model": raptor_model,
+    }
     background_tasks.add_task(_resume_pipeline, job_id, api_keys)
 
     return ResumeResponse(
@@ -371,6 +418,11 @@ async def _run_raptor_retry(job_id: str, api_keys: dict) -> None:
             "thread_id": job_id,
             "upstage_api_key": api_keys["upstage_api_key"],
             "openai_api_key": api_keys["openai_api_key"],
+            # 멀티 프로바이더 키 및 모델 설정
+            "google_api_key": api_keys.get("google_api_key", ""),
+            "xai_api_key": api_keys.get("xai_api_key", ""),
+            "vision_model": api_keys.get("vision_model", settings.vision_model),
+            "raptor_summarization_model": api_keys.get("raptor_summarization_model", settings.raptor_summarization_model),
         })
 
         result = await raptor_node(state, config)
@@ -392,6 +444,8 @@ async def retry_raptor(
     job_id: str,
     x_upstage_api_key: Optional[str] = Header(None, alias="X-UPSTAGE-API-KEY"),
     x_openai_api_key: Optional[str] = Header(None, alias="X-OPENAI-API-KEY"),
+    x_google_api_key: Optional[str] = Header(None, alias="X-GOOGLE-API-KEY"),
+    x_xai_api_key: Optional[str] = Header(None, alias="X-XAI-API-KEY"),
 ) -> RaptorRetryResponse:
     """completed job에서 RAPTOR만 재실행"""
     # 1. job 존재 확인
@@ -413,11 +467,30 @@ async def retry_raptor(
     # 4. API 키
     upstage_key = x_upstage_api_key or settings.upstage_api_key
     openai_key = x_openai_api_key or settings.openai_api_key
+    google_key = x_google_api_key or settings.google_api_key
+    xai_key = x_xai_api_key or settings.xai_api_key
     if not upstage_key or not openai_key:
         raise HTTPException(status_code=400, detail="UPSTAGE API 키와 OpenAI API 키가 필요합니다.")
 
+    # DB에서 모델 설정 조회 + 유효성 검증
+    vision_model = get_app_setting("vision_model", settings.vision_model)
+    raptor_model = get_app_setting("raptor_summarization_model", settings.raptor_summarization_model)
+    try:
+        validate_model(vision_model, ALLOWED_VISION_MODELS)
+        validate_model(raptor_model, ALLOWED_TEXT_MODELS)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     # 5. 백그라운드 실행
-    api_keys = {"upstage_api_key": upstage_key, "openai_api_key": openai_key}
+    api_keys = {
+        "upstage_api_key": upstage_key,
+        "openai_api_key": openai_key,
+        # 멀티 프로바이더 키 및 모델 설정
+        "google_api_key": google_key,
+        "xai_api_key": xai_key,
+        "vision_model": vision_model,
+        "raptor_summarization_model": raptor_model,
+    }
     background_tasks.add_task(_run_raptor_retry, job_id, api_keys)
 
     return RaptorRetryResponse(

@@ -122,6 +122,7 @@ class TestResumeEndpoint:
         with patch("app.pipeline.checkpointer.get_checkpointer", return_value=MagicMock()), \
              patch("app.api.routes.job_manager") as mock_jm, \
              patch("app.api.routes.settings") as mock_settings, \
+             patch("app.api.routes.get_app_setting", return_value="openai/gpt-4o"), \
              patch("app.pipeline.runner.get_runner", return_value=mock_runner):
             mock_jm.get_job.return_value = {
                 "job_id": "abc",
@@ -130,6 +131,10 @@ class TestResumeEndpoint:
             }
             mock_settings.upstage_api_key = "upstage-key"
             mock_settings.openai_api_key = "openai-key"
+            mock_settings.vision_model = "openai/gpt-4o"
+            mock_settings.raptor_summarization_model = "openai/gpt-4.1-mini"
+            mock_settings.google_api_key = ""
+            mock_settings.xai_api_key = ""
             resp = client.post(
                 "/resume/abc",
                 headers={"X-UPSTAGE-API-KEY": "test", "X-OPENAI-API-KEY": "test"},
@@ -146,6 +151,7 @@ class TestResumeEndpoint:
         with patch("app.pipeline.checkpointer.get_checkpointer", return_value=MagicMock()), \
              patch("app.api.routes.job_manager") as mock_jm, \
              patch("app.api.routes.settings") as mock_settings, \
+             patch("app.api.routes.get_app_setting", return_value="openai/gpt-4o"), \
              patch("app.pipeline.runner.get_runner", return_value=mock_runner), \
              patch("app.api.routes._resume_pipeline", new_callable=AsyncMock):
             mock_jm.get_job.return_value = {
@@ -155,6 +161,10 @@ class TestResumeEndpoint:
             }
             mock_settings.upstage_api_key = ""
             mock_settings.openai_api_key = ""
+            mock_settings.vision_model = "openai/gpt-4o"
+            mock_settings.raptor_summarization_model = "openai/gpt-4.1-mini"
+            mock_settings.google_api_key = ""
+            mock_settings.xai_api_key = ""
             resp = client.post(
                 "/resume/ok-job",
                 headers={"X-UPSTAGE-API-KEY": "upstage-key", "X-OPENAI-API-KEY": "openai-key"},

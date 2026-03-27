@@ -89,6 +89,7 @@ def _base_config(**overrides):
     configurable = {
         "upstage_api_key": "test-upstage-key",
         "openai_api_key": "test-openai-key",
+        "raptor_summarization_model": "openai/gpt-4.1-mini",
     }
     configurable.update(overrides)
     return {"configurable": configurable}
@@ -219,7 +220,7 @@ async def test_timeout_enforcement():
     mock_settings.raptor_cluster_dim = 10
     mock_settings.raptor_cluster_threshold = 0.1
     mock_settings.raptor_timeout_seconds = 1
-    mock_settings.raptor_summarization_model = "gpt-4.1-mini"
+    mock_settings.raptor_summarization_model = "openai/gpt-4.1-mini"
     mock_settings.default_embedding_model = "embedding-passage"
     mock_settings.embedding_batch_size = 100
 
@@ -308,7 +309,7 @@ async def test_raptor_node_enabled():
     mock_settings.raptor_cluster_dim = 10
     mock_settings.raptor_cluster_threshold = 0.1
     mock_settings.raptor_timeout_seconds = 300
-    mock_settings.raptor_summarization_model = "gpt-4.1-mini"
+    mock_settings.raptor_summarization_model = "openai/gpt-4.1-mini"
     mock_settings.default_embedding_model = "embedding-passage"
     mock_settings.embedding_batch_size = 100
 
@@ -350,7 +351,7 @@ async def test_graceful_degradation():
     mock_settings.raptor_cluster_dim = 10
     mock_settings.raptor_cluster_threshold = 0.1
     mock_settings.raptor_timeout_seconds = 300
-    mock_settings.raptor_summarization_model = "gpt-4.1-mini"
+    mock_settings.raptor_summarization_model = "openai/gpt-4.1-mini"
     mock_settings.default_embedding_model = "embedding-passage"
     mock_settings.embedding_batch_size = 100
 
@@ -390,7 +391,7 @@ async def test_partial_failure_rollback():
     mock_settings.raptor_cluster_dim = 10
     mock_settings.raptor_cluster_threshold = 0.1
     mock_settings.raptor_timeout_seconds = 300
-    mock_settings.raptor_summarization_model = "gpt-4.1-mini"
+    mock_settings.raptor_summarization_model = "openai/gpt-4.1-mini"
     mock_settings.default_embedding_model = "embedding-passage"
     mock_settings.embedding_batch_size = 100
 
@@ -430,7 +431,7 @@ async def test_idempotency_rerun():
     mock_settings.raptor_cluster_dim = 10
     mock_settings.raptor_cluster_threshold = 0.1
     mock_settings.raptor_timeout_seconds = 300
-    mock_settings.raptor_summarization_model = "gpt-4.1-mini"
+    mock_settings.raptor_summarization_model = "openai/gpt-4.1-mini"
     mock_settings.default_embedding_model = "embedding-passage"
     mock_settings.embedding_batch_size = 100
 

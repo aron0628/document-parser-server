@@ -7,6 +7,7 @@
 import logging
 from typing import Any, Dict, Protocol
 
+from app.config import settings
 from app.models.state import PipelineState
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,10 @@ async def run_pipeline(job_id: str, pdf_path: str, params: Dict[str, Any]) -> Pi
         "thread_id": job_id,
         "upstage_api_key": params["upstage_api_key"],
         "openai_api_key": params["openai_api_key"],
+        "google_api_key": params.get("google_api_key", ""),
+        "xai_api_key": params.get("xai_api_key", ""),
+        "vision_model": params.get("vision_model", settings.vision_model),
+        "raptor_summarization_model": params.get("raptor_summarization_model", settings.raptor_summarization_model),
     }
     logger.info(
         f"[{job_id}] 파이프라인 시작 — "

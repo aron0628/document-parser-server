@@ -9,7 +9,8 @@ class Settings(BaseSettings):
     # API Keys (fallback defaults - per-request headers take precedence)
     upstage_api_key: str = ""
     openai_api_key: str = ""
-    gemini_api_key: str = ""
+    google_api_key: str = ""
+    xai_api_key: str = ""
 
     # Server
     port: int = 9997
@@ -37,11 +38,14 @@ class Settings(BaseSettings):
     # Checkpointer
     enable_checkpointer: bool = True
 
+    # Vision
+    vision_model: str = "openai/gpt-4o"
+
     # RAPTOR
     raptor_max_levels: int = 3
     raptor_cluster_dim: int = 5
     raptor_cluster_threshold: float = 0.3
-    raptor_summarization_model: str = "gpt-4.1-mini"
+    raptor_summarization_model: str = "openai/gpt-4.1-mini"
     min_chunks_for_raptor: int = 10
     raptor_timeout_seconds: int = 600
     raptor_max_concurrency: int = 20

@@ -23,6 +23,7 @@ from langchain_core.runnables import RunnableConfig
 
 from app.config import settings
 from app.db import get_app_setting_int, get_pool
+from app.pipeline.external.llm_provider import get_provider_config, parse_model_string, resolve_api_key
 from app.models.state import PipelineState
 from app.utils.async_utils import gather_with_semaphore
 
@@ -488,12 +489,21 @@ async def raptor_node(state: PipelineState, config: RunnableConfig) -> dict:
             api_key=config["configurable"]["upstage_api_key"],
             base_url="https://api.upstage.ai/v1",
         )
+
+        # raptor_summarization_model로 프로바이더 결정
+        raptor_model_str = config["configurable"].get(
+            "raptor_summarization_model", settings.raptor_summarization_model
+        )
+        provider, summarize_model = parse_model_string(raptor_model_str)
+        provider_config = get_provider_config(provider)
+        summarize_key = resolve_api_key(provider, config["configurable"])
+
         summarize_client = AsyncOpenAI(
-            api_key=config["configurable"]["openai_api_key"],
+            api_key=summarize_key,
+            base_url=provider_config.base_url,
         )
 
         embed_model = state.get("embedding_model", settings.default_embedding_model)
-        summarize_model = settings.raptor_summarization_model
 
         # 멱등성: 기존 결과 삭제
         try:
