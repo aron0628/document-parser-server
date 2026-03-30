@@ -1,43 +1,12 @@
 """LLM 멀티 프로바이더 설정 및 유틸리티"""
 
-from dataclasses import dataclass
-
-
-@dataclass(frozen=True)
-class ProviderConfig:
-    """프로바이더별 설정"""
-
-    base_url: str
-    key_env: str           # 환경 변수명 (예: "OPENAI_API_KEY")
-    key_field: str         # configurable dict의 키명 (예: "openai_api_key")
-    supports_detail: bool  # Vision API의 detail 파라미터 지원 여부
-
-
-_GEMINI_CONFIG = ProviderConfig(
-    base_url="https://generativelanguage.googleapis.com/v1beta/openai",
-    key_env="GOOGLE_API_KEY",
-    key_field="google_api_key",
-    supports_detail=False,
-)
-
-_XAI_CONFIG = ProviderConfig(
-    base_url="https://api.x.ai/v1",
-    key_env="XAI_API_KEY",
-    key_field="xai_api_key",
-    supports_detail=False,
-)
-
-PROVIDER_CONFIG = {
-    "openai": ProviderConfig(
-        base_url="https://api.openai.com/v1",
-        key_env="OPENAI_API_KEY",
-        key_field="openai_api_key",
-        supports_detail=True,
-    ),
-    "gemini": _GEMINI_CONFIG,
-    "google_genai": _GEMINI_CONFIG,  # 관리자 UI 호환 alias
-    "grok": _XAI_CONFIG,
-    "xai": _XAI_CONFIG,              # 관리자 UI 호환 alias
+# 프로바이더별 (settings 키명, 환경변수명) 매핑
+_PROVIDER_KEY_MAP: dict[str, tuple[str, str]] = {
+    "openai":      ("openai_api_key",  "OPENAI_API_KEY"),
+    "google_genai": ("google_api_key", "GOOGLE_API_KEY"),
+    "gemini":      ("google_api_key",  "GOOGLE_API_KEY"),
+    "xai":         ("xai_api_key",     "XAI_API_KEY"),
+    "grok":        ("xai_api_key",     "XAI_API_KEY"),
 }
 
 # 관리자 UI(file-manager-admin)의 AVAILABLE_MODELS와 동일한 모델 목록
@@ -95,28 +64,23 @@ def parse_model_string(model_str: str) -> tuple[str, str]:
     return provider, model_name
 
 
-def get_provider_config(provider: str) -> ProviderConfig:
-    """프로바이더 설정 조회. 미등록 프로바이더면 ValueError 발생."""
-    if provider not in PROVIDER_CONFIG:
-        raise ValueError(
-            f"지원하지 않는 프로바이더: '{provider}'. "
-            f"지원 목록: {list(PROVIDER_CONFIG.keys())}"
-        )
-    return PROVIDER_CONFIG[provider]
-
-
 def resolve_api_key(provider: str, keys: dict) -> str:
     """프로바이더에 맞는 API 키를 keys dict에서 조회.
 
-    ProviderConfig.key_field로 keys dict에서 키를 선택하며,
+    _PROVIDER_KEY_MAP에서 key_field를 선택하며,
     빈 문자열이면 ValueError 발생.
     """
-    config = get_provider_config(provider)
-    api_key = keys.get(config.key_field, "")
+    if provider not in _PROVIDER_KEY_MAP:
+        raise ValueError(
+            f"지원하지 않는 프로바이더: '{provider}'. "
+            f"지원 목록: {list(_PROVIDER_KEY_MAP.keys())}"
+        )
+    key_field, key_env = _PROVIDER_KEY_MAP[provider]
+    api_key = keys.get(key_field, "")
     if not api_key:
         raise ValueError(
             f"프로바이더 '{provider}'의 API 키가 없습니다. "
-            f"'{config.key_field}' 키 또는 환경변수 '{config.key_env}'를 설정하세요."
+            f"'{key_field}' 키 또는 환경변수 '{key_env}'를 설정하세요."
         )
     return api_key
 
@@ -128,15 +92,3 @@ def validate_model(model_str: str, allowed: set) -> None:
             f"허용되지 않는 모델: '{model_str}'. "
             f"허용 목록: {sorted(allowed)}"
         )
-
-
-def build_vision_image_block(b64_url: str, provider: str) -> dict:
-    """Vision API용 이미지 content block 생성.
-
-    OpenAI는 detail 파라미터를 포함하고, 나머지 프로바이더는 제외.
-    """
-    config = get_provider_config(provider)
-    image_url: dict = {"url": b64_url}
-    if config.supports_detail:
-        image_url["detail"] = "low"
-    return {"type": "image_url", "image_url": image_url}

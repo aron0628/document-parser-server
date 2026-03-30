@@ -41,7 +41,7 @@ class LangGraphPipelineRunner:
 
         job_id = state.get("job_id", "unknown")
         on_phase_change = self._make_on_phase_change(job_id)
-        tracker = PipelineTracker(job_id, on_phase_change=on_phase_change)
+        tracker = PipelineTracker(job_id, on_phase_change=on_phase_change, configurable=configurable)
         callback = LangGraphCallbackTracker(tracker, state=state)
 
         try:

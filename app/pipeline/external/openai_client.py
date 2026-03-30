@@ -1,20 +1,15 @@
-"""OpenAI Vision + Chat API 클라이언트 (httpx.AsyncClient)"""
+"""OpenAI Vision + Chat API 클라이언트 (LangChain 기반)"""
 
-import asyncio
 import base64
 import logging
-import random
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
-import httpx
+from langchain_core.messages import HumanMessage
 
-from app.pipeline.external.llm_provider import build_vision_image_block
+from app.pipeline.external.llm_utils import load_chat_model_with_retry
 
 logger = logging.getLogger(__name__)
-
-MAX_RETRIES = 3
-INITIAL_BACKOFF = 1.0
 
 _TABLE_TEXT_PROMPT = (
     "다음 테이블 데이터를 깔끔한 마크다운 테이블 형식으로 변환해주세요. "
@@ -32,79 +27,56 @@ _TABLE_IMAGE_ONLY_PROMPT = (
     "언어: {language}"
 )
 
+# 프로바이더별 API 키 kwarg 매핑
+_PROVIDER_API_KEY_KWARG = {
+    "openai": "api_key",
+    "google_genai": "google_api_key",
+    "gemini": "google_api_key",
+    "xai": "xai_api_key",
+    "grok": "xai_api_key",
+}
 
-async def _call_openai(
-    api_key: str,
-    messages: list,
-    model: str = "gpt-4o",
-    timeout: float = 120.0,
-    on_rate_limit=None,
-    base_url: str = "https://api.openai.com/v1",
-) -> Dict[str, Any]:
-    """OpenAI 호환 Chat API 호출 (retry 포함).
 
-    base_url을 통해 OpenAI 외 다른 프로바이더(Gemini, Grok 등)도 지원.
-    """
-    url = f"{base_url}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    payload = {"model": model, "messages": messages, "max_tokens": 4096}
+def _resolve_api_key_kwarg(provider: str, api_key: str) -> dict:
+    """프로바이더에 맞는 API 키 kwarg dict 반환."""
+    key_name = _PROVIDER_API_KEY_KWARG.get(provider, "api_key")
+    return {key_name: api_key}
 
-    for attempt in range(MAX_RETRIES):
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(url, headers=headers, json=payload)
 
-                if response.status_code == 429:
-                    wait = INITIAL_BACKOFF * (2 ** attempt) + random.uniform(0, 1)
-                    logger.warning(f"API rate limit({base_url}), retrying in {wait:.2f}s")
-                    if on_rate_limit:
-                        await on_rate_limit(wait)
-                    await asyncio.sleep(wait)
-                    continue
-
-                response.raise_for_status()
-                return response.json()
-
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code >= 500 and attempt < MAX_RETRIES - 1:
-                wait = INITIAL_BACKOFF * (2 ** attempt) + random.uniform(0, 1)
-                logger.warning(f"API server error({base_url}), retrying in {wait:.2f}s")
-                await asyncio.sleep(wait)
-                continue
-            raise
-        except httpx.RequestError as e:
-            if attempt < MAX_RETRIES - 1:
-                wait = INITIAL_BACKOFF * (2 ** attempt) + random.uniform(0, 1)
-                logger.warning(f"API request error({base_url}): {e}, retrying in {wait:.2f}s")
-                await asyncio.sleep(wait)
-                continue
-            raise
-
-    raise RuntimeError(f"API 호출 실패({base_url}): {MAX_RETRIES}회 재시도 후에도 실패")
+def _is_rate_limit_error(e: Exception) -> bool:
+    """LangChain이 래핑한 429 에러 감지"""
+    err_name = type(e).__name__
+    if "RateLimit" in err_name or "ResourceExhausted" in err_name:
+        return True
+    if hasattr(e, "status_code") and getattr(e, "status_code", 0) == 429:
+        return True
+    return False
 
 
 async def describe_image(
     image_path: str,
+    model_str: str,
     api_key: str,
     language: str = "Korean",
     context: Optional[str] = None,
     on_rate_limit=None,
-    base_url: str = "https://api.openai.com/v1",
-    provider: str = "openai",
 ) -> str:
     """이미지에 대한 설명 생성 (Vision API).
 
-    base_url / provider를 통해 멀티 프로바이더 지원.
-    기본값은 OpenAI로 유지하여 하위 호환성 보장.
+    load_chat_model로 프로바이더별 모델을 자동 초기화하며,
+    on_rate_limit 콜백으로 글로벌 백프레셔를 유지한다.
     """
+    provider = model_str.split("/", 1)[0] if "/" in model_str else "openai"
+    api_key_kwarg = _resolve_api_key_kwarg(provider, api_key)
+
+    model = load_chat_model_with_retry(model_str, timeout=120, **api_key_kwarg)
+
+    # 멀티모달 메시지 구성
     image_data = Path(image_path).read_bytes()
     b64 = base64.b64encode(image_data).decode("utf-8")
     b64_url = f"data:image/png;base64,{b64}"
 
-    content_blocks = []
+    content_blocks: list[Any] = []
 
     if context:
         content_blocks.append({
@@ -121,34 +93,37 @@ async def describe_image(
                   f"차트, 다이어그램, 사진 등 어떤 유형인지 먼저 밝히고 핵심 내용을 설명해주세요.")
 
     content_blocks.append({"type": "text", "text": prompt})
-    content_blocks.append(build_vision_image_block(b64_url, provider))
+    content_blocks.append({"type": "image_url", "image_url": {"url": b64_url}})
 
-    messages = [{"role": "user", "content": content_blocks}]
+    message = HumanMessage(content=content_blocks)
 
-    result = await _call_openai(api_key, messages, on_rate_limit=on_rate_limit, base_url=base_url)
-    return result["choices"][0]["message"]["content"]
+    try:
+        response = await model.ainvoke([message])
+        return response.content
+    except Exception as e:
+        if _is_rate_limit_error(e) and on_rate_limit:
+            wait = 5.0
+            await on_rate_limit(wait)
+        raise
 
 
 def _build_table_messages(
     table_content: str,
     language: str,
     image_path: Optional[str] = None,
-    provider: str = "openai",
-) -> list:
-    """테이블 변환용 messages 리스트 생성.
+) -> HumanMessage:
+    """테이블 변환용 HumanMessage 생성.
 
     분기 기준:
     - 텍스트+이미지: 멀티모달 content 리스트 구성
     - 이미지만: 이미지 전용 프롬프트로 content 리스트 구성
     - 텍스트만: 기존 문자열 content 사용
-
-    provider를 통해 멀티 프로바이더 지원 (detail 파라미터 포함 여부 제어).
     """
     if image_path:
         image_data = Path(image_path).read_bytes()
         b64 = base64.b64encode(image_data).decode("utf-8")
         b64_url = f"data:image/png;base64,{b64}"
-        image_part = build_vision_image_block(b64_url, provider)
+        image_part = {"type": "image_url", "image_url": {"url": b64_url}}
 
         if table_content:
             text = _TABLE_MULTIMODAL_PROMPT.format(
@@ -163,24 +138,34 @@ def _build_table_messages(
             language=language, table_content=table_content
         )
 
-    return [{"role": "user", "content": content}]
+    return HumanMessage(content=content)
 
 
 async def extract_table(
     table_content: str,
+    model_str: str,
     api_key: str,
     language: str = "Korean",
     image_path: Optional[str] = None,
     on_rate_limit=None,
-    base_url: str = "https://api.openai.com/v1",
-    provider: str = "openai",
 ) -> str:
     """테이블 내용을 구조화된 마크다운 테이블로 변환.
 
     image_path 제공 시 Vision API를 통해 멀티모달 분석 수행.
-    base_url / provider를 통해 멀티 프로바이더 지원.
-    하위 호환: 추가 파라미터 없이 기존 호출 방식 그대로 사용 가능.
+    load_chat_model로 프로바이더별 모델을 자동 초기화한다.
     """
-    messages = _build_table_messages(table_content, language, image_path, provider)
-    result = await _call_openai(api_key, messages, on_rate_limit=on_rate_limit, base_url=base_url)
-    return result["choices"][0]["message"]["content"]
+    provider = model_str.split("/", 1)[0] if "/" in model_str else "openai"
+    api_key_kwarg = _resolve_api_key_kwarg(provider, api_key)
+
+    model = load_chat_model_with_retry(model_str, timeout=120, **api_key_kwarg)
+
+    message = _build_table_messages(table_content, language, image_path)
+
+    try:
+        response = await model.ainvoke([message])
+        return response.content
+    except Exception as e:
+        if _is_rate_limit_error(e) and on_rate_limit:
+            wait = 5.0
+            await on_rate_limit(wait)
+        raise

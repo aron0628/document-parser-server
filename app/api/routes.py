@@ -149,7 +149,7 @@ async def _resume_pipeline(job_id: str, api_keys: dict) -> None:
         else:
             recursion_limit = 100
 
-        tracker = PipelineTracker(job_id, on_phase_change=runner._make_on_phase_change(job_id))
+        tracker = PipelineTracker(job_id, on_phase_change=runner._make_on_phase_change(job_id), configurable=config.get("configurable"))
         callback = LangGraphCallbackTracker(tracker, state=saved_state.values if saved_state else {})
 
         config["callbacks"] = [callback]

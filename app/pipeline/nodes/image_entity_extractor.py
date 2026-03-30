@@ -9,7 +9,7 @@ from langchain_core.runnables import RunnableConfig
 from app.config import settings
 from app.db import get_app_setting_int
 from app.models.state import PipelineState
-from app.pipeline.external.llm_provider import get_provider_config, parse_model_string, resolve_api_key
+from app.pipeline.external.llm_provider import parse_model_string, resolve_api_key
 from app.pipeline.external.openai_client import describe_image
 from app.utils.async_utils import create_rate_limit_handler, gather_with_backpressure
 
@@ -49,8 +49,7 @@ async def _process_single_image(
     job_id: str,
     total: int,
     on_rate_limit: Optional[Callable],
-    base_url: str = "https://api.openai.com/v1",
-    provider: str = "openai",
+    model_str: str = "openai/gpt-4o",
 ) -> Dict[str, Any]:
     """단일 이미지에 대해 Vision API로 설명 생성 (병렬 실행 단위)"""
     page = img_elem.get("page", page_num)
@@ -74,8 +73,8 @@ async def _process_single_image(
     try:
         page_context = page_text_map.get(page)
         description = await describe_image(
-            matching_path, api_key, language, context=page_context,
-            on_rate_limit=on_rate_limit, base_url=base_url, provider=provider,
+            matching_path, model_str=model_str, api_key=api_key, language=language,
+            context=page_context, on_rate_limit=on_rate_limit,
         )
         logger.info(
             f"[{job_id}] 이미지 설명 생성 완료: page={page}, pos={pos}, context={'있음' if page_context else '없음'}"
@@ -104,7 +103,6 @@ async def image_entity_extractor_node(state: PipelineState, config: RunnableConf
     # vision_model로 프로바이더 결정
     vision_model_str = config["configurable"].get("vision_model", settings.vision_model)
     provider, model = parse_model_string(vision_model_str)
-    provider_config = get_provider_config(provider)
     api_key = resolve_api_key(provider, config["configurable"])
     language = state.get("language", "Korean")
     image_paths = state.get("image_paths", [])
@@ -128,7 +126,7 @@ async def image_entity_extractor_node(state: PipelineState, config: RunnableConf
         coros.append(_process_single_image(
             i, page_num, img_elem, image_paths, api_key, language,
             page_text_map, job_id, len(all_images), on_rate_limit,
-            base_url=provider_config.base_url, provider=provider,
+            model_str=vision_model_str,
         ))
 
     image_entities = await gather_with_backpressure(semaphore, coros, pause_event)

@@ -10,7 +10,7 @@ from langchain_core.runnables import RunnableConfig
 from app.config import settings
 from app.db import get_app_setting_int
 from app.models.state import PipelineState
-from app.pipeline.external.llm_provider import get_provider_config, parse_model_string, resolve_api_key
+from app.pipeline.external.llm_provider import parse_model_string, resolve_api_key
 from app.pipeline.external.openai_client import extract_table
 from app.pipeline.nodes.export_image import _FALLBACK_PNG
 from app.utils.async_utils import create_rate_limit_handler, gather_with_backpressure
@@ -28,8 +28,7 @@ async def _process_single_table(
     job_id: str,
     total: int,
     on_rate_limit: Optional[Callable],
-    base_url: str = "https://api.openai.com/v1",
-    provider: str = "openai",
+    model_str: str = "openai/gpt-4o",
 ) -> Dict[str, Any]:
     """단일 테이블 엔티티 추출 (에러 시 graceful degradation)"""
     table_content = tbl_elem.get("html", "") or tbl_elem.get("content", "")
@@ -58,8 +57,8 @@ async def _process_single_table(
 
     try:
         structured = await extract_table(
-            table_content, api_key, language, image_path=matching_image,
-            on_rate_limit=on_rate_limit, base_url=base_url, provider=provider,
+            table_content, model_str=model_str, api_key=api_key, language=language,
+            image_path=matching_image, on_rate_limit=on_rate_limit,
         )
         logger.info(f"[{job_id}] 테이블 구조화 완료: page={page_num}")
         return {
@@ -86,7 +85,6 @@ async def table_entity_extractor_node(state: PipelineState, config: RunnableConf
     # vision_model로 프로바이더 결정
     vision_model_str = config["configurable"].get("vision_model", settings.vision_model)
     provider, model = parse_model_string(vision_model_str)
-    provider_config = get_provider_config(provider)
     api_key = resolve_api_key(provider, config["configurable"])
     language = state.get("language", "Korean")
     page_elements = state.get("page_elements", {})
@@ -108,7 +106,7 @@ async def table_entity_extractor_node(state: PipelineState, config: RunnableConf
         coros.append(_process_single_table(
             i, page_num, tbl_elem, image_paths, api_key, language,
             job_id, len(all_tables), on_rate_limit,
-            base_url=provider_config.base_url, provider=provider,
+            model_str=vision_model_str,
         ))
 
     table_entities = await gather_with_backpressure(semaphore, coros, pause_event)

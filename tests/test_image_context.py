@@ -1,7 +1,7 @@
 """이미지 설명 텍스트 컨텍스트 주입 단위 테스트"""
 
 import base64
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -87,26 +87,33 @@ def test_build_page_text_map_no_text_page_excluded():
 # ---------------------------------------------------------------------------
 
 
+def _make_mock_model():
+    """ainvoke를 mock하는 모델 객체 생성"""
+    mock_response = MagicMock()
+    mock_response.content = "설명"
+    mock_model = MagicMock()
+    mock_model.ainvoke = AsyncMock(return_value=mock_response)
+    mock_model.with_retry = MagicMock(return_value=mock_model)
+    return mock_model
+
+
 @pytest.mark.asyncio
-async def test_describe_image_without_context(tmp_path):
+@patch("app.pipeline.external.llm_utils.init_chat_model")
+async def test_describe_image_without_context(mock_init, tmp_path):
     """context=None → 2개 content 블록 (text + image_url)"""
+    mock_model = _make_mock_model()
+    mock_init.return_value = mock_model
+
     img = tmp_path / "test.png"
     img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
 
-    captured_messages = []
+    from app.pipeline.external.openai_client import describe_image
 
-    async def mock_call_openai(api_key, messages, **kwargs):
-        captured_messages.append(messages)
-        return {"choices": [{"message": {"content": "설명"}}]}
+    await describe_image(str(img), model_str="openai/gpt-4o", api_key="test-key", language="Korean")
 
-    with patch(
-        "app.pipeline.external.openai_client._call_openai", side_effect=mock_call_openai
-    ):
-        from app.pipeline.external.openai_client import describe_image
-
-        await describe_image(str(img), "test-key", "Korean")
-
-    content = captured_messages[0][0]["content"]
+    call_args = mock_model.ainvoke.call_args
+    messages = call_args[0][0]
+    content = messages[0].content
     assert len(content) == 2
     assert content[0]["type"] == "text"
     assert content[1]["type"] == "image_url"
@@ -114,25 +121,22 @@ async def test_describe_image_without_context(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_describe_image_with_context(tmp_path):
+@patch("app.pipeline.external.llm_utils.init_chat_model")
+async def test_describe_image_with_context(mock_init, tmp_path):
     """context="페이지 텍스트" → 3개 content 블록 (context + prompt + image_url)"""
+    mock_model = _make_mock_model()
+    mock_init.return_value = mock_model
+
     img = tmp_path / "test.png"
     img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
 
-    captured_messages = []
+    from app.pipeline.external.openai_client import describe_image
 
-    async def mock_call_openai(api_key, messages, **kwargs):
-        captured_messages.append(messages)
-        return {"choices": [{"message": {"content": "설명"}}]}
+    await describe_image(str(img), model_str="openai/gpt-4o", api_key="test-key", language="Korean", context="페이지 텍스트")
 
-    with patch(
-        "app.pipeline.external.openai_client._call_openai", side_effect=mock_call_openai
-    ):
-        from app.pipeline.external.openai_client import describe_image
-
-        await describe_image(str(img), "test-key", "Korean", context="페이지 텍스트")
-
-    content = captured_messages[0][0]["content"]
+    call_args = mock_model.ainvoke.call_args
+    messages = call_args[0][0]
+    content = messages[0].content
     assert len(content) == 3
     assert "페이지 텍스트" in content[0]["text"]
     assert "맥락을 참고" in content[1]["text"]
@@ -140,23 +144,20 @@ async def test_describe_image_with_context(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_describe_image_with_empty_string_context(tmp_path):
+@patch("app.pipeline.external.llm_utils.init_chat_model")
+async def test_describe_image_with_empty_string_context(mock_init, tmp_path):
     """context="" → None과 동일하게 2개 content 블록"""
+    mock_model = _make_mock_model()
+    mock_init.return_value = mock_model
+
     img = tmp_path / "test.png"
     img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
 
-    captured_messages = []
+    from app.pipeline.external.openai_client import describe_image
 
-    async def mock_call_openai(api_key, messages, **kwargs):
-        captured_messages.append(messages)
-        return {"choices": [{"message": {"content": "설명"}}]}
+    await describe_image(str(img), model_str="openai/gpt-4o", api_key="test-key", language="Korean", context="")
 
-    with patch(
-        "app.pipeline.external.openai_client._call_openai", side_effect=mock_call_openai
-    ):
-        from app.pipeline.external.openai_client import describe_image
-
-        await describe_image(str(img), "test-key", "Korean", context="")
-
-    content = captured_messages[0][0]["content"]
+    call_args = mock_model.ainvoke.call_args
+    messages = call_args[0][0]
+    content = messages[0].content
     assert len(content) == 2

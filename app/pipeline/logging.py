@@ -25,8 +25,8 @@ PIPELINE_NODES: list[tuple[str, int, str]] = [
     ("keyword_preprocess", 2, "키워드 전처리"),
     ("export_image", 2, "이미지 내보내기"),
     ("page_elements_extractor", 2, "페이지 요소 추출"),
-    ("image_entity_extractor", 2, "이미지 엔티티 추출 (OpenAI)"),
-    ("table_entity_extractor", 2, "테이블 엔티티 추출 (OpenAI)"),
+    ("image_entity_extractor", 2, "이미지 엔티티 추출"),
+    ("table_entity_extractor", 2, "테이블 엔티티 추출"),
     ("merge_entity", 2, "엔티티 병합"),
     ("reconstruct_elements", 2, "요소 재구성"),
     # Phase 3
@@ -64,13 +64,18 @@ class PipelineTracker:
             advances. Receives ``(job_id, new_phase)`` as arguments.
     """
 
+    # 모델명을 동적으로 표시할 노드 목록
+    _LLM_NODES = {"image_entity_extractor", "table_entity_extractor"}
+
     def __init__(
         self,
         job_id: str,
         on_phase_change: Callable | None = None,
+        configurable: dict | None = None,
     ) -> None:
         self.job_id = job_id
         self._on_phase_change = on_phase_change
+        self._configurable = configurable or {}
         self._pipeline_start: float | None = None
         self._node_timings: dict[str, float] = {}
         self._node_start_times: dict[str, float] = {}
@@ -96,6 +101,12 @@ class PipelineTracker:
             self._pipeline_start = now
 
         phase, description = NODE_META.get(node_name, (0, node_name))
+
+        # LLM 노드는 현재 사용 중인 모델명을 동적으로 표시
+        if node_name in self._LLM_NODES and self._configurable:
+            model_str = self._configurable.get("vision_model", "")
+            if model_str:
+                description = f"{description} ({model_str})"
 
         batch_suffix = self._extract_batch_suffix(node_name, state)
         if batch_suffix:

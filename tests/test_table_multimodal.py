@@ -2,7 +2,9 @@
 
 import pytest
 from pathlib import Path
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
+
+from langchain_core.messages import HumanMessage
 
 from app.pipeline.external.openai_client import _build_table_messages
 from app.pipeline.nodes.table_entity_extractor import table_entity_extractor_node
@@ -15,13 +17,14 @@ from app.pipeline.nodes.export_image import _FALLBACK_PNG
 
 
 def test_build_table_messages_html_and_image(tmp_path):
-    """HTML + 이미지 → content가 리스트, 멀티모달 프롬프트, detail=low 포함"""
+    """HTML + 이미지 → HumanMessage, content가 리스트, 멀티모달 프롬프트"""
     img_file = tmp_path / "test_table.png"
     img_file.write_bytes(b"\x89PNG\r\n\x1a\n")  # 임의 PNG 바이트
 
-    messages = _build_table_messages("html data", "Korean", image_path=str(img_file))
+    message = _build_table_messages("html data", "Korean", image_path=str(img_file))
 
-    content = messages[0]["content"]
+    assert isinstance(message, HumanMessage)
+    content = message.content
     assert isinstance(content, list), "HTML+이미지일 때 content는 리스트여야 함"
 
     text_parts = [p for p in content if p.get("type") == "text"]
@@ -30,26 +33,28 @@ def test_build_table_messages_html_and_image(tmp_path):
 
     image_parts = [p for p in content if p.get("type") == "image_url"]
     assert image_parts, "image_url 파트가 존재해야 함"
-    assert image_parts[0]["image_url"]["detail"] == "low"
+    assert "url" in image_parts[0]["image_url"]
 
 
 def test_build_table_messages_html_only():
-    """HTML만 → content가 문자열, '테이블 데이터' 키워드 포함"""
-    messages = _build_table_messages("html data", "Korean")
+    """HTML만 → HumanMessage, content가 문자열, '테이블 데이터' 키워드 포함"""
+    message = _build_table_messages("html data", "Korean")
 
-    content = messages[0]["content"]
+    assert isinstance(message, HumanMessage)
+    content = message.content
     assert isinstance(content, str), "HTML만 있을 때 content는 문자열이어야 함"
     assert "테이블 데이터" in content
 
 
 def test_build_table_messages_image_only(tmp_path):
-    """이미지만 → content가 리스트, '테이블 이미지를 분석' 텍스트 포함"""
+    """이미지만 → HumanMessage, content가 리스트, '테이블 이미지를 분석' 텍스트 포함"""
     img_file = tmp_path / "test_table.png"
     img_file.write_bytes(b"\x89PNG\r\n\x1a\n")
 
-    messages = _build_table_messages("", "Korean", image_path=str(img_file))
+    message = _build_table_messages("", "Korean", image_path=str(img_file))
 
-    content = messages[0]["content"]
+    assert isinstance(message, HumanMessage)
+    content = message.content
     assert isinstance(content, list), "이미지만 있을 때 content는 리스트여야 함"
 
     text_parts = [p for p in content if p.get("type") == "text"]
@@ -61,10 +66,11 @@ def test_build_table_messages_image_only(tmp_path):
 
 
 def test_build_table_messages_neither():
-    """HTML도 이미지도 없음 → content가 문자열 (기존 텍스트 프롬프트)"""
-    messages = _build_table_messages("", "Korean")
+    """HTML도 이미지도 없음 → HumanMessage, content가 문자열 (기존 텍스트 프롬프트)"""
+    message = _build_table_messages("", "Korean")
 
-    content = messages[0]["content"]
+    assert isinstance(message, HumanMessage)
+    content = message.content
     assert isinstance(content, str), "둘 다 없을 때 content는 문자열이어야 함"
 
 

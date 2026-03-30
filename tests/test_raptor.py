@@ -229,6 +229,7 @@ async def test_timeout_enforcement():
     with patch("app.pipeline.nodes.raptor.get_pool", return_value=pool), \
          patch("app.pipeline.nodes.raptor.settings", mock_settings), \
          patch("app.pipeline.nodes.raptor.AsyncOpenAI"), \
+         patch("app.pipeline.nodes.raptor.load_chat_model_with_retry", return_value=AsyncMock()), \
          patch("app.pipeline.nodes.raptor._recursive_raptor", side_effect=slow_raptor):
         result = await raptor_node(state, _base_config())
 
@@ -318,6 +319,7 @@ async def test_raptor_node_enabled():
     with patch("app.pipeline.nodes.raptor.get_pool", return_value=pool), \
          patch("app.pipeline.nodes.raptor.settings", mock_settings), \
          patch("app.pipeline.nodes.raptor.AsyncOpenAI"), \
+         patch("app.pipeline.nodes.raptor.load_chat_model_with_retry", return_value=AsyncMock()), \
          patch("app.pipeline.nodes.raptor._recursive_raptor", AsyncMock(return_value=fake_results)):
         result = await raptor_node(state, _base_config())
 
@@ -360,6 +362,7 @@ async def test_graceful_degradation():
     with patch("app.pipeline.nodes.raptor.get_pool", return_value=pool), \
          patch("app.pipeline.nodes.raptor.settings", mock_settings), \
          patch("app.pipeline.nodes.raptor.AsyncOpenAI"), \
+         patch("app.pipeline.nodes.raptor.load_chat_model_with_retry", return_value=AsyncMock()), \
          patch("app.pipeline.nodes.raptor._recursive_raptor", AsyncMock(side_effect=Exception("클러스터링 실패"))):
         result = await raptor_node(state, _base_config())
 
@@ -400,6 +403,7 @@ async def test_partial_failure_rollback():
     with patch("app.pipeline.nodes.raptor.get_pool", return_value=pool), \
          patch("app.pipeline.nodes.raptor.settings", mock_settings), \
          patch("app.pipeline.nodes.raptor.AsyncOpenAI"), \
+         patch("app.pipeline.nodes.raptor.load_chat_model_with_retry", return_value=AsyncMock()), \
          patch("app.pipeline.nodes.raptor._recursive_raptor", AsyncMock(return_value=fake_results)):
         result = await raptor_node(state, _base_config())
 
@@ -440,6 +444,7 @@ async def test_idempotency_rerun():
     with patch("app.pipeline.nodes.raptor.get_pool", return_value=pool), \
          patch("app.pipeline.nodes.raptor.settings", mock_settings), \
          patch("app.pipeline.nodes.raptor.AsyncOpenAI"), \
+         patch("app.pipeline.nodes.raptor.load_chat_model_with_retry", return_value=AsyncMock()), \
          patch("app.pipeline.nodes.raptor._recursive_raptor", AsyncMock(return_value=fake_results)):
         result = await raptor_node(state, _base_config())
 

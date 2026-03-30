@@ -14,7 +14,9 @@ import traceback
 from typing import Dict, List, Optional
 
 import numpy as np
-from openai import AsyncOpenAI, APIConnectionError, RateLimitError, APIStatusError
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
+from openai import AsyncOpenAI
 from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 from umap import UMAP
@@ -23,7 +25,9 @@ from langchain_core.runnables import RunnableConfig
 
 from app.config import settings
 from app.db import get_app_setting_int, get_pool
-from app.pipeline.external.llm_provider import get_provider_config, parse_model_string, resolve_api_key
+from app.pipeline.external.llm_provider import parse_model_string, resolve_api_key
+from app.pipeline.external.llm_utils import load_chat_model_with_retry
+from app.pipeline.external.openai_client import _resolve_api_key_kwarg
 from app.models.state import PipelineState
 from app.utils.async_utils import gather_with_semaphore
 
@@ -193,63 +197,33 @@ def _sanitize_text(text: str) -> str:
     )
 
 
-_MAX_RETRIES = 3
-_INITIAL_BACKOFF = 2.0
-
-
-def _is_retryable(error: Exception) -> bool:
-    """일시적 에러(재시도 가능) 여부 판별"""
-    if isinstance(error, (APIConnectionError, RateLimitError)):
-        return True
-    if isinstance(error, APIStatusError) and error.status_code >= 500:
-        return True
-    return False
-
-
 async def _summarize_cluster(
     texts: List[str],
-    client: AsyncOpenAI,
-    model: str,
+    model: BaseChatModel,
     max_chars: int = 100_000,
 ) -> Optional[str]:
     """클러스터 텍스트들을 LLM으로 요약.
 
-    - 일시적 에러(429, 5xx, 네트워크): 지수 백오프 재시도
-    - 영구적 에러(400 등): 즉시 스킵 (None 반환)
+    load_chat_model_with_retry()가 일시적 에러(429, 5xx, 네트워크)에 대해
+    지수 백오프 재시도를 처리한다.
+    영구적 에러(400 등)는 즉시 스킵 (None 반환).
     """
     sanitized = [_sanitize_text(t) for t in texts]
     combined = "\n---\n".join(sanitized)
     if len(combined) > max_chars:
         combined = combined[:max_chars] + "\n... (truncated)"
 
-    for attempt in range(_MAX_RETRIES):
-        try:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "다음 텍스트들의 핵심 내용을 종합하여 하나의 상세한 요약을 작성하세요.",
-                    },
-                    {"role": "user", "content": combined},
-                ],
-            )
-            content = response.choices[0].message.content
-            return content if content else None
-        except Exception as e:
-            if _is_retryable(e) and attempt < _MAX_RETRIES - 1:
-                wait = _INITIAL_BACKOFF * (2 ** attempt)
-                logger.warning(
-                    f"클러스터 요약 일시적 에러 (attempt {attempt + 1}/{_MAX_RETRIES}), "
-                    f"{wait}s 후 재시도: {e}"
-                )
-                await asyncio.sleep(wait)
-                continue
-            # 영구적 에러이거나 재시도 소진
-            logger.warning(f"클러스터 요약 실패 (텍스트 {len(texts)}개): {e}")
-            logger.debug(f"실패 클러스터 텍스트 샘플 (첫 200자): {combined[:200]!r}")
-            return None
-    return None
+    try:
+        response = await model.ainvoke([
+            SystemMessage(content="다음 텍스트들의 핵심 내용을 종합하여 하나의 상세한 요약을 작성하세요."),
+            HumanMessage(content=combined),
+        ])
+        content = response.content
+        return content if content else None
+    except Exception as e:
+        logger.warning(f"클러스터 요약 실패 (텍스트 {len(texts)}개): {e}")
+        logger.debug(f"실패 클러스터 텍스트 샘플 (첫 200자): {combined[:200]!r}")
+        return None
 
 
 async def _embed_texts(
@@ -294,8 +268,7 @@ async def _recursive_raptor(
     threshold: float,
     embed_client: AsyncOpenAI,
     embed_model: str,
-    summarize_client: AsyncOpenAI,
-    summarize_model: str,
+    summarize_model: BaseChatModel,
     batch_size: int = 100,
     semaphore: Optional[asyncio.Semaphore] = None,
     deadline: Optional[float] = None,
@@ -337,7 +310,7 @@ async def _recursive_raptor(
     for cluster_indices in clusters:
         cluster_texts = [texts[i] for i in cluster_indices]
         summarize_coros.append(
-            _summarize_cluster(cluster_texts, summarize_client, summarize_model)
+            _summarize_cluster(cluster_texts, summarize_model)
         )
     raw_summaries = await gather_with_semaphore(semaphore, summarize_coros)
 
@@ -398,7 +371,6 @@ async def _recursive_raptor(
         threshold,
         embed_client,
         embed_model,
-        summarize_client,
         summarize_model,
         batch_size,
         semaphore,
@@ -494,14 +466,11 @@ async def raptor_node(state: PipelineState, config: RunnableConfig) -> dict:
         raptor_model_str = config["configurable"].get(
             "raptor_summarization_model", settings.raptor_summarization_model
         )
-        provider, summarize_model = parse_model_string(raptor_model_str)
-        provider_config = get_provider_config(provider)
+        provider, _ = parse_model_string(raptor_model_str)
         summarize_key = resolve_api_key(provider, config["configurable"])
+        api_key_kwarg = _resolve_api_key_kwarg(provider, summarize_key)
 
-        summarize_client = AsyncOpenAI(
-            api_key=summarize_key,
-            base_url=provider_config.base_url,
-        )
+        summarize_model = load_chat_model_with_retry(raptor_model_str, **api_key_kwarg)
 
         embed_model = state.get("embedding_model", settings.default_embedding_model)
 
@@ -528,7 +497,6 @@ async def raptor_node(state: PipelineState, config: RunnableConfig) -> dict:
             threshold=settings.raptor_cluster_threshold,
             embed_client=embed_client,
             embed_model=embed_model,
-            summarize_client=summarize_client,
             summarize_model=summarize_model,
             batch_size=settings.embedding_batch_size,
             deadline=deadline,
