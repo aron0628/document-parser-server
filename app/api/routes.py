@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPExceptio
 from fastapi.responses import FileResponse
 
 from app.config import settings
-from app.db import get_app_setting, get_app_setting_bool
+from app.db import get_app_setting, get_app_setting_bool, load_app_settings
 from app.pipeline.external.llm_provider import ALLOWED_TEXT_MODELS, ALLOWED_VISION_MODELS, validate_model
 from app.models.schemas import (
     DeleteJobResponse,
@@ -191,6 +191,9 @@ async def parse_pdf(
     if not upstage_key or not openai_key:
         raise HTTPException(status_code=400, detail="UPSTAGE API 키와 OpenAI API 키가 필요합니다.")
 
+    # 요청 시점에 DB 설정 갱신
+    await load_app_settings()
+
     # 파일 크기 확인 (app_settings 테이블에서 관리)
     from app.db import get_app_setting_int
     content = await file.read()
@@ -351,6 +354,9 @@ async def resume_pipeline(
     if not upstage_key or not openai_key:
         raise HTTPException(status_code=400, detail="UPSTAGE API 키와 OpenAI API 키가 필요합니다.")
 
+    # 요청 시점에 DB 설정 갱신
+    await load_app_settings()
+
     # DB에서 모델 설정 조회 + 유효성 검증
     vision_model = get_app_setting("vision_model", settings.vision_model)
     raptor_model = get_app_setting("raptor_summarization_model", settings.raptor_summarization_model)
@@ -471,6 +477,9 @@ async def retry_raptor(
     xai_key = x_xai_api_key or settings.xai_api_key
     if not upstage_key or not openai_key:
         raise HTTPException(status_code=400, detail="UPSTAGE API 키와 OpenAI API 키가 필요합니다.")
+
+    # 요청 시점에 DB 설정 갱신
+    await load_app_settings()
 
     # DB에서 모델 설정 조회 + 유효성 검증
     vision_model = get_app_setting("vision_model", settings.vision_model)

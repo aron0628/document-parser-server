@@ -64,8 +64,12 @@ class PipelineTracker:
             advances. Receives ``(job_id, new_phase)`` as arguments.
     """
 
-    # 모델명을 동적으로 표시할 노드 목록
-    _LLM_NODES = {"image_entity_extractor", "table_entity_extractor"}
+    # 모델명을 동적으로 표시할 노드 → configurable 키 매핑
+    _LLM_NODE_CONFIG_KEY = {
+        "image_entity_extractor": "vision_model",
+        "table_entity_extractor": "vision_model",
+        "raptor": "raptor_summarization_model",
+    }
 
     def __init__(
         self,
@@ -103,8 +107,9 @@ class PipelineTracker:
         phase, description = NODE_META.get(node_name, (0, node_name))
 
         # LLM 노드는 현재 사용 중인 모델명을 동적으로 표시
-        if node_name in self._LLM_NODES and self._configurable:
-            model_str = self._configurable.get("vision_model", "")
+        config_key = self._LLM_NODE_CONFIG_KEY.get(node_name)
+        if config_key and self._configurable:
+            model_str = self._configurable.get(config_key, "")
             if model_str:
                 description = f"{description} ({model_str})"
 
