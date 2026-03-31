@@ -20,7 +20,7 @@ ENV/
 *.swo
 
 # Environment
-.env
+# .env  ← git으로 관리 (private repo)
 
 # Data volumes (runtime)
 data/
